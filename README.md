@@ -1,6 +1,6 @@
 # HDL Starter Kit (GSD-Driven)
 
-This repository is a concrete starter implementation of the workflow described in `Intro.md`:
+This repository is a concrete starter implementation of the workflow described in `Phase-1-Plans-and-Goal.md`, `Assumptions.md`, and `Outline.md`:
 
 - GSD-2 as project manager/orchestrator
 - HDL tools as ground truth (NVC + vendor synthesis flow)
