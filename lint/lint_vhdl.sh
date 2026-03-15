@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v ghdl >/dev/null 2>&1; then
-  echo "error: ghdl not found. Install GHDL to run VHDL checks."
+if ! command -v nvc >/dev/null 2>&1; then
+  echo "error: nvc not found. Install NVC to run VHDL checks."
   exit 1
 fi
 
@@ -18,10 +18,10 @@ if [[ ${#vhdl_sources[@]} -eq 0 ]]; then
   exit 1
 fi
 
-echo "==> GHDL analyze"
-ghdl -a --std=08 "${vhdl_sources[@]}"
+echo "==> NVC analyze"
+nvc --std=2008 -a "${vhdl_sources[@]}"
 
-echo "==> GHDL elaborate gps_l1_ca_phase1_tb"
-ghdl -e --std=08 gps_l1_ca_phase1_tb
+echo "==> NVC elaborate gps_l1_ca_phase1_tb"
+nvc --std=2008 -e gps_l1_ca_phase1_tb
 
 echo "VHDL lint/check passed."

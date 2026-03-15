@@ -1,0 +1,7 @@
+# NVC build/elaboration library
+/work/
+
+# NVC waveform outputs
+/sim/*.fst
+/sim/*.ghw
+/sim/*.vcd

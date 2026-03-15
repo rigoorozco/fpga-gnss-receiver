@@ -4,7 +4,7 @@ SHELL := /usr/bin/env bash
 
 help:
 	@echo "Targets:"
-	@echo "  make lint-vhdl    - Run VHDL checks with GHDL"
+	@echo "  make lint-vhdl    - Run VHDL checks with NVC"
 	@echo "  make lint-sv      - Run SystemVerilog checks with slang/verilator"
 	@echo "  make sim-smoke    - Run smoke simulations"
 	@echo "  make sim-regress  - Run regression suite"
@@ -27,5 +27,5 @@ synth-check:
 	@./synth/check_synth.sh
 
 waves:
-	@echo "VHDL waveform: sim/gps_l1_ca_phase1_tb.vcd"
+	@echo "VHDL waveform: sim/gps_l1_ca_phase1_tb.fst"
 	@echo "SV waveform (if enabled by simulator flags): sim/obj_dir/"

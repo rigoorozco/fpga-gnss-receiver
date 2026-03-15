@@ -3,7 +3,7 @@
 This repository is a concrete starter implementation of the workflow described in `Intro.md`:
 
 - GSD-2 as project manager/orchestrator
-- HDL tools as ground truth (GHDL, slang, Verilator, optional synthesis)
+- HDL tools as ground truth (NVC, slang, Verilator, optional synthesis)
 - Mechanical verification commands through scripts and Make targets
 
 This now includes a Phase 1 VHDL-first GNSS receiver scaffold from `Phase-1-Plans-and-Goal.md`:

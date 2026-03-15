@@ -14,7 +14,7 @@ VHDL smoke sim target:
 - VCD output: `sim/gps_l1_ca_phase1_tb.vcd`
 
 ## Current Environment Limitation
-- HDL simulators/linters were not available in this workspace session (`ghdl` not installed), so only script/Makefile sanity checks were run locally.
+- HDL simulators/linters were not available in this workspace session (`nvc` not installed), so only script/Makefile sanity checks were run locally.
 
 ## Expected Functional Signals in Sim
 - Acquisition transitions to done/success with configured low threshold.

@@ -4,11 +4,11 @@ set -euo pipefail
 ./lint/lint_vhdl.sh
 ./lint/lint_sv.sh
 
-if command -v ghdl >/dev/null 2>&1; then
+if command -v nvc >/dev/null 2>&1; then
   echo "==> Running VHDL smoke simulation"
-  ghdl -r --std=08 gps_l1_ca_phase1_tb --stop-time=4ms --vcd=sim/gps_l1_ca_phase1_tb.vcd
+  nvc --std=2008 -r gps_l1_ca_phase1_tb --stop-time=4ms --wave=sim/gps_l1_ca_phase1_tb.fst
 else
-  echo "error: ghdl not found. Cannot run VHDL smoke simulation."
+  echo "error: nvc not found. Cannot run VHDL smoke simulation."
   exit 1
 fi
 
