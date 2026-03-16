@@ -6,6 +6,7 @@
 /sim/*.ghw
 /sim/*.vcd
 /sim/*.log
+/sim/plots/
 
 # Generated build outputs
 /build/
