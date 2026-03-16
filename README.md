@@ -6,13 +6,16 @@ This repository is a concrete starter implementation of the workflow described i
 - HDL tools as ground truth (NVC + vendor synthesis flow)
 - Mechanical verification commands through scripts and Make targets
 
-This now includes a Phase 1 VHDL-first GNSS receiver scaffold from `Phase-1-Plans-and-Goal.md`:
+This now includes a Phase 2 VHDL-first GPS L1 C/A receiver scaffold from `Phase-2-Plans-and-Goal.md`:
 
 - fixed `2 MSPS` `cs16` ingress
-- shared acquisition block + one tracking channel
-- nav-bit extraction
-- UART report path
-- simple control/status register bank
+- shared acquisition scheduler + shared acquisition engine
+- configurable multi-channel tracking bank (default `5`)
+- per-channel nav-bit handling and shared nav store
+- observables engine and first FPGA PVT placeholder solver
+- UART report path with channel / observables / PVT packet types
+- simulation PVT logs in human-readable `Lat/Long/Height` with receiver-time / epoch tags
+- expanded control/status register bank
 
 ## Layout
 

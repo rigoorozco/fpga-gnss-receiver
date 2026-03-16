@@ -14,3 +14,12 @@ rtl/vhdl/gps_l1_ca_report.vhd
 rtl/vhdl/uart_tx.vhd
 rtl/vhdl/gps_l1_ca_phase1_top.vhd
 tb/vhdl/gps_l1_ca_phase1_tb.vhd
+rtl/vhdl/gps_l1_ca_ctrl_phase2.vhd
+rtl/vhdl/gps_l1_ca_acq_sched.vhd
+rtl/vhdl/gps_l1_ca_chan_bank.vhd
+rtl/vhdl/gps_l1_ca_nav_store.vhd
+rtl/vhdl/gps_l1_ca_observables.vhd
+rtl/vhdl/gps_l1_ca_pvt.vhd
+rtl/vhdl/gps_l1_ca_report_phase2.vhd
+rtl/vhdl/gps_l1_ca_phase2_top.vhd
+tb/vhdl/gps_l1_ca_phase2_tb.vhd

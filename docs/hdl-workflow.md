@@ -15,19 +15,23 @@
 
 ## Top Units
 
-- VHDL TB top: `gps_l1_ca_phase1_tb`
+- VHDL TB top: `gps_l1_ca_phase2_tb`
 
 ## Verification Source of Truth
 
 - VHDL lint/check: `make lint-vhdl`
 - Smoke simulations: `make sim-smoke`
 - Basic regression: `make sim-regress`
+- Optional smoke-time TB overrides: set `TB_GENERIC_ARGS`, for example
+  - `TB_GENERIC_ARGS="-gG_MAX_FILE_SAMPLES=50000" make sim-smoke`
 
 Supporting docs:
 - `docs/phase1_register_map.md`
+- `docs/phase2_register_map.md`
 - `docs/packet_definition.md`
 - `docs/fixed_point_and_loop_notes.md`
 - `docs/phase1_verification_notes.md`
+- `docs/phase2_verification_notes.md`
 
 ## Definition of Done
 
@@ -36,14 +40,19 @@ Supporting docs:
 - No new latch/multi-driver/width/uninitialized warnings introduced
 - Any interface changes are reflected in docs and testbenches
 
-## Phase 1 Module Map
+## Phase 2 Module Map
 
-- Top integration: `gps_l1_ca_phase1_top`
+- Top integration: `gps_l1_ca_phase2_top`
 - Shared package: `gps_l1_ca_pkg`
-- Control/status: `gps_l1_ca_ctrl`
+- Control/status: `gps_l1_ca_ctrl_phase2`
 - Sample ingress: `axis_sample_ingress`
-- Shared acquisition: `gps_l1_ca_acq`
-- Tracking channel: `gps_l1_ca_track_chan`
-- Navigation bit extraction: `gps_l1_ca_nav`
-- Report packing: `gps_l1_ca_report`
+- Shared acquisition scheduler: `gps_l1_ca_acq_sched`
+- Shared acquisition engine: `gps_l1_ca_acq`
+- Channel bank: `gps_l1_ca_chan_bank`
+- Per-channel tracking: `gps_l1_ca_track_chan`
+- Per-channel nav-bit extraction: `gps_l1_ca_nav`
+- Navigation store: `gps_l1_ca_nav_store`
+- Observables engine: `gps_l1_ca_observables`
+- PVT engine: `gps_l1_ca_pvt`
+- Report packing: `gps_l1_ca_report_phase2`
 - UART transport: `uart_tx`

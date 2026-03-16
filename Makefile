@@ -49,4 +49,4 @@ synth-check:
 	@./synth/check_synth.sh
 
 waves:
-	@echo "VHDL waveform: sim/gps_l1_ca_phase1_tb.fst"
+	@echo "VHDL waveform: sim/gps_l1_ca_phase2_tb.fst"

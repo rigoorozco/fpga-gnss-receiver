@@ -1,0 +1,46 @@
+Current receiver time: 14 s
+New GPS NAV message received in channel 3: subframe 1 from satellite GPS PRN 20 (Block IIR)
+New GPS NAV message received in channel 0: subframe 1 from satellite GPS PRN 01 (Block IIF)
+New GPS NAV message received in channel 4: subframe 1 from satellite GPS PRN 32 (Block IIF)
+New GPS NAV message received in channel 2: subframe 1 from satellite GPS PRN 17 (Block IIR-M)
+Current receiver time: 15 s
+Current receiver time: 16 s
+Current receiver time: 17 s
+Current receiver time: 18 s
+Current receiver time: 19 s
+Current receiver time: 20 s
+New GPS NAV message received in channel 3: subframe 2 from satellite GPS PRN 02 (Block IIR)
+New GPS NAV message received in channel 0: subframe 2 from satellite GPS PRN 01 (Block IIF)
+New GPS NAV message received in channel 4: subframe 2 from satellite GPS PRN 32 (Block IIF)
+New GPS NAV message received in channel 1: subframe 2 from satellite GPS PRN 11 (Block IIR)
+New GPS NAV message received in channel 2: subframe 2 from satellite GPS PRN 17 (Block IIR-M)
+Current receiver time: 21 s
+Current receiver time: 22 s
+Current receiver time: 23 s
+Current receiver time: 24 s
+Current receiver time: 25 s
+Current receiver time: 26 s
+New GPS NAV message received in channel 3: subframe 3 from satellite GPS PRN 20 (Block IIR)
+New GPS NAV message received in channel 0: subframe 3 from satellite GPS PRN 01 (Block IIF)
+New GPS NAV message received in channel 4: subframe 3 from satellite GPS PRN 32 (Block IIF)
+New GPS NAV message received in channel 2: subframe 3 from satellite GPS PRN 17 (Block IIR-M)
+New GPS NAV message received in channel 1: subframe 3 from satellite GPS PRN 11 (Block IIR)
+First position fix at 2013-Apr-04 06:23:31.740000 UTC is Lat = 41.2749 [deg], Long = 1.98754 [deg], Height= 100.795 [m]
+Position at 2013-Apr-04 06:23:32.000000 UTC using 4 observations is Lat = 41.274888307 [deg], Long = 1.987581872 [deg], Height = 86.928 [m]
+Position at 2013-Apr-04 06:23:32.500000 UTC using 4 observations is Lat = 41.274964746 [deg], Long = 1.987510141 [deg], Height = 90.557 [m]
+Current receiver time: 27 s
+Position at 2013-Apr-04 06:23:33.000000 UTC using 4 observations is Lat = 41.274921885 [deg], Long = 1.987605767 [deg], Height = 73.365 [m]
+Position at 2013-Apr-04 06:23:33.500000 UTC using 4 observations is Lat = 41.274866502 [deg], Long = 1.987553835 [deg], Height = 83.313 [m]
+Current receiver time: 28 s
+Position at 2013-Apr-04 06:23:34.000000 UTC using 4 observations is Lat = 41.274904024 [deg], Long = 1.987612510 [deg], Height = 87.615 [m]
+Position at 2013-Apr-04 06:23:34.500000 UTC using 4 observations is Lat = 41.274877911 [deg], Long = 1.987553312 [deg], Height = 81.405 [m]
+Current receiver time: 29 s
+Position at 2013-Apr-04 06:23:35.000000 UTC using 4 observations is Lat = 41.274916750 [deg], Long = 1.987576650 [deg], Height = 108.288 [m]
+Position at 2013-Apr-04 06:23:35.500000 UTC using 4 observations is Lat = 41.274803167 [deg], Long = 1.987562527 [deg], Height = 90.144 [m]
+Current receiver time: 30 s
+Position at 2013-Apr-04 06:23:36.000000 UTC using 4 observations is Lat = 41.275044618 [deg], Long = 1.987619037 [deg], Height = 102.346 [m]
+Position at 2013-Apr-04 06:23:36.500000 UTC using 4 observations is Lat = 41.274878468 [deg], Long = 1.987557377 [deg], Height = 102.764 [m]
+Current receiver time: 31 s
+Position at 2013-Apr-04 06:23:37.000000 UTC using 4 observations is Lat = 41.274995336 [deg], Long = 1.987554843 [deg], Height = 113.653 [m]
+Position at 2013-Apr-04 06:23:37.500000 UTC using 4 observations is Lat = 41.274951615 [deg], Long = 1.987600581 [deg], Height = 92.064 [m]
+Current receiver time: 32 s

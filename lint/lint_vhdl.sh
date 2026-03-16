@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VHDL_TB_TOP="${VHDL_TB_TOP:-gps_l1_ca_phase2_tb}"
+
 if ! command -v nvc >/dev/null 2>&1; then
   echo "error: nvc not found. Install NVC to run VHDL checks."
   exit 1
@@ -21,7 +23,7 @@ fi
 echo "==> NVC analyze"
 nvc --std=2008 -a "${vhdl_sources[@]}"
 
-echo "==> NVC elaborate gps_l1_ca_phase1_tb"
-nvc --std=2008 -e gps_l1_ca_phase1_tb
+echo "==> NVC elaborate ${VHDL_TB_TOP}"
+nvc --std=2008 -e "${VHDL_TB_TOP}"
 
 echo "VHDL lint/check passed."
