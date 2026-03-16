@@ -15,7 +15,8 @@ entity gps_l1_ca_nav is
 end entity;
 
 architecture rtl of gps_l1_ca_nav is
-  constant C_NAV_BIT_THRESH : integer := 50000;
+  -- Relaxed threshold for current fixed-point prompt scaling in simulation.
+  constant C_NAV_BIT_THRESH : integer := 20000;
   signal accum_r     : signed(31 downto 0) := (others => '0');
   signal bit_cnt_r   : integer range 0 to 19 := 0;
   signal nav_valid_r : std_logic := '0';

@@ -336,7 +336,9 @@ begin
       dopp_v       : in integer;
       code_v       : in integer;
       max_ms_v     : in integer;
-      case_name    : in string
+      case_name    : in string;
+      hold_ms_v    : in integer := 1;
+      do_assign_v  : in boolean := true
     ) is
       variable prn_seq_v      : prn_seq_t;
       variable carr_phase_v   : signed(31 downto 0) := (others => '0');
@@ -355,8 +357,15 @@ begin
       variable decim_v        : integer := 1;
       variable lock_hold_samp_v : integer := 0;
       variable lock_hold_done_v : boolean := false;
+      variable hold_target_samples_v : integer := C_SAMPLES_PER_MS;
       variable synth_max_samples_v : integer := 0;
     begin
+      if hold_ms_v > 0 then
+        hold_target_samples_v := hold_ms_v * C_SAMPLES_PER_MS;
+      else
+        hold_target_samples_v := C_SAMPLES_PER_MS;
+      end if;
+
       code_init_v := code_v mod 1023;
       if code_init_v < 0 then
         code_init_v := code_init_v + 1023;
@@ -368,17 +377,23 @@ begin
       mask_v(ch_idx_v) := '1';
       chan_enable_mask <= mask_v;
 
-      assign_ch_idx_i <= to_unsigned(ch_idx_v, assign_ch_idx_i'length);
-      assign_prn_i <= to_unsigned(prn_v, assign_prn_i'length);
-      assign_dopp_i <= to_signed(dopp_v, assign_dopp_i'length);
-      assign_code_i <= to_unsigned(code_init_v, assign_code_i'length);
-      assign_valid_i <= '1';
-      wait until rising_edge(clk);
-      assign_valid_i <= '0';
-
-      for i in 0 to 1 loop
+      if do_assign_v then
+        assign_ch_idx_i <= to_unsigned(ch_idx_v, assign_ch_idx_i'length);
+        assign_prn_i <= to_unsigned(prn_v, assign_prn_i'length);
+        assign_dopp_i <= to_signed(dopp_v, assign_dopp_i'length);
+        assign_code_i <= to_unsigned(code_init_v, assign_code_i'length);
+        assign_valid_i <= '1';
         wait until rising_edge(clk);
-      end loop;
+        assign_valid_i <= '0';
+
+        for i in 0 to 1 loop
+          wait until rising_edge(clk);
+        end loop;
+      else
+        for i in 0 to 1 loop
+          wait until rising_edge(clk);
+        end loop;
+      end if;
 
       assert chan_alloc_o(ch_idx_v) = '1'
         report case_name & ": expected channel allocated."
@@ -419,7 +434,7 @@ begin
                chan_state_o(ch_idx_v) = TRACK_LOCKED then
               lock_seen_v := true;
               lock_hold_samp_v := lock_hold_samp_v + 1;
-              if lock_hold_samp_v >= C_SAMPLES_PER_MS then
+              if lock_hold_samp_v >= hold_target_samples_v then
                 lock_hold_done_v := true;
               end if;
             else
@@ -434,14 +449,14 @@ begin
                 ", injected_samples=" & integer'image(out_samp_cnt_v));
 
         if not lock_hold_done_v then
-          for i in 0 to 5000 loop
+          for i in 0 to hold_target_samples_v + 5000 loop
             drive_file_sample(to_signed(0, 16), to_signed(0, 16));
             if chan_code_lock_o(ch_idx_v) = '1' and
                chan_carrier_lock_o(ch_idx_v) = '1' and
                chan_state_o(ch_idx_v) = TRACK_LOCKED then
               lock_seen_v := true;
               lock_hold_samp_v := lock_hold_samp_v + 1;
-              if lock_hold_samp_v >= C_SAMPLES_PER_MS then
+              if lock_hold_samp_v >= hold_target_samples_v then
                 lock_hold_done_v := true;
                 exit;
               end if;
@@ -459,7 +474,7 @@ begin
              chan_state_o(ch_idx_v) = TRACK_LOCKED then
             lock_seen_v := true;
             lock_hold_samp_v := lock_hold_samp_v + 1;
-            if lock_hold_samp_v >= C_SAMPLES_PER_MS then
+            if lock_hold_samp_v >= hold_target_samples_v then
               lock_hold_done_v := true;
               exit;
             end if;
@@ -475,16 +490,16 @@ begin
         log_msg(case_name & ": lock not seen");
       end if;
       if lock_hold_done_v then
-        log_msg(case_name & ": lock held for 1 ms");
+        log_msg(case_name & ": lock held for " & integer'image(hold_ms_v) & " ms");
       elsif lock_seen_v then
-        log_msg(case_name & ": lock dropped before 1 ms hold");
+        log_msg(case_name & ": lock dropped before " & integer'image(hold_ms_v) & " ms hold");
       end if;
 
       assert lock_seen_v
         report case_name & ": did not reach TRACK_LOCKED with code+carrier lock."
         severity failure;
       assert lock_hold_done_v
-        report case_name & ": did not keep lock for 1 ms."
+        report case_name & ": did not keep lock for " & integer'image(hold_ms_v) & " ms."
         severity failure;
       assert to_integer(chan_cn0_dbhz_o(ch_idx_v)) >= to_integer(min_cn0_dbhz_i)
         report case_name & ": expected C/N0 estimate above configured minimum."
@@ -519,6 +534,7 @@ begin
     assign_and_wait_lock(0, 32, -1500, 1008, 8, "Run6 result -> ch0");
     assign_and_wait_lock(0, 17, -1500, 992,  8, "Run7 result -> ch0");
     assign_and_wait_lock(0, 11, 750,   928,  8, "Run8 result -> ch0");
+    assign_and_wait_lock(0, 11, 750,   928,  50, "Run9 stay on PRN11 -> ch0 (40ms hold)", 40, false);
 
     log_msg("gps_l1_ca_chan_bank_tb completed");
     s_valid <= '0';
