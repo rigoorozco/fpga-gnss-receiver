@@ -22,6 +22,10 @@
 - VHDL lint/check: `make lint-vhdl`
 - Smoke simulations: `make sim-smoke`
 - Basic regression: `make sim-regress`
+- Phase 3 metrics (non-gating): `make phase3-eval`
+- Phase 3 metrics (gating thresholds): `make phase3-gate`
+- Schematic generation (Docker): `make schematic`
+- Schematic generation (local tools): `make schematic-local`
 - Optional smoke-time TB overrides: set `TB_GENERIC_ARGS`, for example
   - `TB_GENERIC_ARGS="-gG_MAX_FILE_SAMPLES=50000" make sim-smoke`
 
@@ -32,6 +36,7 @@ Supporting docs:
 - `docs/fixed_point_and_loop_notes.md`
 - `docs/phase1_verification_notes.md`
 - `docs/phase2_verification_notes.md`
+- `docs/phase3_verification_notes.md`
 
 ## Definition of Done
 

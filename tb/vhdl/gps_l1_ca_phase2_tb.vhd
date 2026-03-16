@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.gps_l1_ca_log_pkg.all;
 
 entity gps_l1_ca_phase2_tb is
   generic (
@@ -8,8 +9,9 @@ entity gps_l1_ca_phase2_tb is
     G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat";
     G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
-    G_MAX_FILE_SAMPLES    : integer := 200000;
-    G_REQUIRE_PVT         : boolean := false
+    G_MAX_FILE_SAMPLES    : integer := 400000000;
+    G_REQUIRE_PVT         : boolean := false;
+    G_FAST_MODE           : boolean := false
   );
 end entity;
 
@@ -38,7 +40,7 @@ begin
 
   dut : entity work.gps_l1_ca_phase2_top
     generic map (
-      G_NUM_CHANNELS      => 5
+      G_NUM_CHANNELS      => 8
     )
     port map (
       clk          => clk,
@@ -128,8 +130,12 @@ begin
     variable sample_cnt     : integer := 0;
     variable status_reg     : std_logic_vector(31 downto 0) := (others => '0');
     variable alloc_reg      : std_logic_vector(31 downto 0) := (others => '0');
+    variable lock_reg       : std_logic_vector(31 downto 0) := (others => '0');
     variable pvt_seen       : boolean := false;
+    variable lock_seen      : boolean := false;
+    variable acq_seen       : boolean := false;
     variable alloc_channels : integer;
+    variable lock_channels  : integer;
   begin
     rst_n <= '0';
     wait for 200 ns;
@@ -138,16 +144,26 @@ begin
 
     -- Phase 2 configuration.
     ctrl_write(16#04#, x"0000051F"); -- ch mask 0x1F, preferred count 5
-    ctrl_write(16#08#, x"00000A01"); -- PRN range 1..10
+    ctrl_write(16#08#, x"00002001"); -- PRN range 1..32
     ctrl_write(16#0C#, x"00000020"); -- low acq threshold for TB
-    ctrl_write(16#10#, x"0000EC78"); -- doppler min -5000
-    ctrl_write(16#14#, x"00001388"); -- doppler max +5000
-    ctrl_write(16#18#, x"000001F4"); -- doppler step 500
+    ctrl_write(16#10#, x"0000D8F0"); -- doppler min -10000
+    ctrl_write(16#14#, x"00002710"); -- doppler max +10000
+    ctrl_write(16#18#, x"000000FA"); -- doppler step 250
+    ctrl_write(16#1C#, x"00000016"); -- min C/N0 threshold 22 dB-Hz
+    ctrl_write(16#20#, x"00004CCD"); -- carrier lock threshold Q15 (~0.60)
+    ctrl_write(16#24#, x"00000032"); -- max_lock_fail = 50 epochs
 
-    -- core_en + rescan + tracking + uart + nav + obs + pvt.
-    ctrl_write(16#00#, x"000000FD");
-    -- Keep all run enables, clear rescan pulse.
-    ctrl_write(16#00#, x"000000F9");
+    if G_FAST_MODE then
+      -- core_en + rescan + tracking only (disable uart/nav/obs/pvt for speed).
+      ctrl_write(16#00#, x"0000000D");
+      -- Keep core + tracking, clear rescan pulse.
+      ctrl_write(16#00#, x"00000009");
+    else
+      -- core_en + rescan + tracking + uart + nav + obs + pvt.
+      ctrl_write(16#00#, x"000000FD");
+      -- Keep all run enables, clear rescan pulse.
+      ctrl_write(16#00#, x"000000F9");
+    end if;
 
     if G_USE_FILE_INPUT then
       assert G_FILE_SAMPLE_RATE_SPS mod G_DUT_SAMPLE_RATE_SPS = 0
@@ -160,10 +176,10 @@ begin
         report "Unable to open input file: " & G_INPUT_FILE
         severity failure;
 
-      report "Phase 2 replay input: " & G_INPUT_FILE;
-      report "Input Fs=" & integer'image(G_FILE_SAMPLE_RATE_SPS) &
-             " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS) &
-             ", decimation=" & integer'image(decim);
+      log_msg("Phase 2 replay input: " & G_INPUT_FILE);
+      log_msg("Input Fs=" & integer'image(G_FILE_SAMPLE_RATE_SPS) &
+              " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS) &
+              ", decimation=" & integer'image(decim));
 
       while not endfile(iq_file) loop
         if G_MAX_FILE_SAMPLES > 0 and out_samp_cnt >= G_MAX_FILE_SAMPLES then
@@ -182,12 +198,17 @@ begin
         if (in_file_cnt mod decim) = 0 then
           drive_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
           out_samp_cnt := out_samp_cnt + 1;
+          if G_DUT_SAMPLE_RATE_SPS > 0 and (out_samp_cnt mod G_DUT_SAMPLE_RATE_SPS) = 0 then
+            log_msg("Receiver time: " &
+                    integer'image(out_samp_cnt / G_DUT_SAMPLE_RATE_SPS) &
+                    " s");
+          end if;
         end if;
         in_file_cnt := in_file_cnt + 1;
       end loop;
       file_close(iq_file);
-      report "Phase 2 file replay done. input_samples=" & integer'image(in_file_cnt) &
-             ", injected_samples=" & integer'image(out_samp_cnt);
+      log_msg("Phase 2 file replay done. input_samples=" & integer'image(in_file_cnt) &
+              ", injected_samples=" & integer'image(out_samp_cnt));
     else
       while sample_cnt < 150000 loop
         drive_sample(
@@ -195,39 +216,82 @@ begin
           to_signed(255 - (sample_cnt mod 511), 16)
         );
         sample_cnt := sample_cnt + 1;
+        if G_DUT_SAMPLE_RATE_SPS > 0 and (sample_cnt mod G_DUT_SAMPLE_RATE_SPS) = 0 then
+          log_msg("Receiver time: " &
+                  integer'image(sample_cnt / G_DUT_SAMPLE_RATE_SPS) &
+                  " s");
+        end if;
       end loop;
     end if;
 
-    for i in 0 to 299 loop
-      wait for 1 ms;
-      ctrl_read(16#40#, status_reg);
-      ctrl_read(16#4C#, alloc_reg);
-      alloc_channels := 0;
-      for b in 0 to 4 loop
-        if alloc_reg(b) = '1' then
-          alloc_channels := alloc_channels + 1;
+    if G_REQUIRE_PVT or (not G_FAST_MODE) then
+      for i in 0 to 999 loop
+        wait for 1 ms;
+        ctrl_read(16#40#, status_reg);
+        ctrl_read(16#4C#, alloc_reg);
+        alloc_channels := 0;
+        for b in 0 to 4 loop
+          if alloc_reg(b) = '1' then
+            alloc_channels := alloc_channels + 1;
+          end if;
+        end loop;
+
+        if status_reg(2) = '1' then
+          pvt_seen := true;
+          log_msg("Phase 2 PVT valid observed. allocated_channels=" & integer'image(alloc_channels));
+          exit;
         end if;
       end loop;
+    elsif G_FAST_MODE then
+      log_msg("FAST_MODE: monitoring acquisition + code-lock status (1 ms cadence).");
+      for i in 0 to 199 loop
+        wait for 1 ms;
+        ctrl_read(16#40#, status_reg);
+        ctrl_read(16#50#, lock_reg);
+        lock_channels := 0;
+        for b in 0 to 7 loop
+          if lock_reg(b) = '1' then
+            lock_channels := lock_channels + 1;
+          end if;
+        end loop;
 
-      if status_reg(2) = '1' then
-        pvt_seen := true;
-        report "Phase 2 PVT valid observed. allocated_channels=" & integer'image(alloc_channels);
-        exit;
-      end if;
-    end loop;
+        if status_reg(1) = '1' and (not acq_seen) then
+          acq_seen := true;
+          log_msg("FAST_MODE: acquisition success observed.");
+        end if;
+
+        if (i mod 20) = 0 then
+          log_msg("FAST_MODE: progress t=" & integer'image(i + 1) &
+                  " ms, acq_success=" & std_logic'image(status_reg(1)) &
+                  ", lock_channels=" & integer'image(lock_channels));
+        end if;
+
+        if lock_channels > 0 then
+          lock_seen := true;
+          log_msg("FAST_MODE: code lock observed. lock_channels=" &
+                  integer'image(lock_channels) &
+                  ", lock_bitmap_lsb_dec=" &
+                  integer'image(to_integer(unsigned(lock_reg(7 downto 0)))));
+          exit;
+        end if;
+      end loop;
+    end if;
 
     if G_REQUIRE_PVT then
       assert pvt_seen
         report "PVT valid not observed before timeout."
         severity failure;
     else
-      if not pvt_seen then
-        report "PVT valid not observed before timeout." severity warning;
+      if (not pvt_seen) and (not G_FAST_MODE) then
+        log_msg(LOG_WARN, "PVT valid not observed before timeout.");
+      end if;
+      if G_FAST_MODE and (not lock_seen) then
+        log_msg(LOG_WARN, "FAST_MODE: no code lock observed before timeout.");
       end if;
     end if;
 
     wait for 1 ms;
-    assert false report "gps_l1_ca_phase2_tb completed" severity note;
+    log_msg("gps_l1_ca_phase2_tb completed");
     wait;
   end process;
 end architecture;

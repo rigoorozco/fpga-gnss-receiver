@@ -18,6 +18,9 @@ entity gps_l1_ca_track_chan is
     s_valid        : in  std_logic;
     s_i            : in  signed(15 downto 0);
     s_q            : in  signed(15 downto 0);
+    min_cn0_dbhz_i : in  unsigned(7 downto 0);
+    carrier_lock_th_i : in signed(15 downto 0);
+    max_lock_fail_i : in unsigned(7 downto 0);
     track_state_o  : out track_state_t;
     code_lock_o    : out std_logic;
     carrier_lock_o : out std_logic;
@@ -25,24 +28,272 @@ entity gps_l1_ca_track_chan is
     prn_o          : out unsigned(5 downto 0);
     dopp_o         : out signed(15 downto 0);
     code_o         : out unsigned(10 downto 0);
+    cn0_dbhz_o     : out unsigned(7 downto 0);
     prompt_i_o     : out signed(23 downto 0);
     prompt_q_o     : out signed(23 downto 0)
   );
 end entity;
 
 architecture rtl of gps_l1_ca_track_chan is
-  signal state_r          : track_state_t := TRACK_IDLE;
-  signal prn_r            : unsigned(5 downto 0) := (others => '0');
-  signal dopp_r           : signed(15 downto 0) := (others => '0');
-  signal code_phase_r     : unsigned(10 downto 0) := (others => '0');
-  signal code_nco_phase_r : unsigned(31 downto 0) := (others => '0');
-  signal prompt_i_acc_r   : signed(23 downto 0) := (others => '0');
-  signal prompt_q_acc_r   : signed(23 downto 0) := (others => '0');
-  signal ms_sample_cnt_r  : integer range 0 to C_SAMPLES_PER_MS - 1 := 0;
-  signal ms_count_r       : integer range 0 to 255 := 0;
-  signal report_valid_r   : std_logic := '0';
-  signal code_lock_r      : std_logic := '0';
-  signal carrier_lock_r   : std_logic := '0';
+  type int_arr_t is array (natural range <>) of integer;
+
+  constant C_LOCK_ENTER_GOOD_MS : integer := 3;
+  constant C_PROMPT_MAG_MIN     : integer := 2500;
+  constant C_CARR_LOCK_HYST_Q15 : integer := 2048; -- ~0.0625 hysteresis on lock metric.
+  constant C_DLL_ERR_LOCK_MAX   : integer := 60000000;
+  constant C_CARR_ERR_LOCK_MAX  : integer := 60000000;
+  constant C_DLL_ERR_TRACK_MAX  : integer := 100000000;
+  constant C_CARR_ERR_TRACK_MAX : integer := 100000000;
+  constant C_CARR_ERR_NORM_GAIN : integer := 256;
+  constant C_CARR_ERR_DBAND_PULLIN : integer := 24;
+  constant C_CARR_ERR_DBAND_LOCK   : integer := 8;
+  constant C_CN0_M2_SCALE       : integer := 512;
+  constant C_LOCK_SMOOTH_DIV    : integer := 8;
+  constant C_DOPP_STEP_PULLIN_HZ: integer := 80;
+  constant C_DOPP_STEP_LOCK_HZ  : integer := 20;
+  constant C_CODE_FCW_STEP      : unsigned(31 downto 0) := x"00010000";
+  constant C_CODE_FCW_DELTA_MAX : unsigned(31 downto 0) := x"00200000";
+  constant C_CARR_FCW_PER_HZ    : integer := 2147;
+  -- 10*log10(1 + n/16) in dB*100 for n=0..16.
+  constant C_LOG10_OCTAVE_LUT_DB100 : int_arr_t(0 to 16) := (
+    0, 26, 51, 75, 97, 118, 138, 158, 176, 194, 211, 227, 243, 258, 273, 287, 301
+  );
+
+  signal state_r            : track_state_t := TRACK_IDLE;
+  signal prn_r              : unsigned(5 downto 0) := (others => '0');
+  signal dopp_r             : signed(15 downto 0) := (others => '0');
+  signal code_phase_r       : unsigned(10 downto 0) := (others => '0');
+
+  signal code_nco_phase_r   : unsigned(31 downto 0) := (others => '0');
+  signal code_fcw_r         : unsigned(31 downto 0) := C_CODE_NCO_FCW;
+  signal carr_nco_phase_r   : signed(31 downto 0) := (others => '0');
+
+  signal prompt_i_acc_r     : signed(31 downto 0) := (others => '0');
+  signal prompt_q_acc_r     : signed(31 downto 0) := (others => '0');
+  signal early_i_acc_r      : signed(31 downto 0) := (others => '0');
+  signal early_q_acc_r      : signed(31 downto 0) := (others => '0');
+  signal late_i_acc_r       : signed(31 downto 0) := (others => '0');
+  signal late_q_acc_r       : signed(31 downto 0) := (others => '0');
+
+  signal prompt_i_rep_r     : signed(23 downto 0) := (others => '0');
+  signal prompt_q_rep_r     : signed(23 downto 0) := (others => '0');
+
+  signal prev_prompt_i_r    : signed(31 downto 0) := (others => '0');
+  signal prev_prompt_q_r    : signed(31 downto 0) := (others => '0');
+  signal prev_prompt_valid_r: std_logic := '0';
+
+  signal ms_sample_cnt_r    : integer range 0 to C_SAMPLES_PER_MS - 1 := 0;
+  signal good_ms_cnt_r      : integer range 0 to 255 := 0;
+  signal lock_fail_cnt_r    : integer range 0 to 255 := 0;
+  signal m2_avg_r           : integer := 0;
+  signal m4_avg_r           : integer := 0;
+  signal nbd_avg_r          : integer := 0;
+  signal nbp_avg_r          : integer := 1;
+  signal carrier_lock_metric_r : signed(15 downto 0) := (others => '0');
+
+  signal report_valid_r     : std_logic := '0';
+  signal code_lock_r        : std_logic := '0';
+  signal carrier_lock_r     : std_logic := '0';
+  signal cn0_dbhz_r         : unsigned(7 downto 0) := (others => '0');
+
+  signal prn_init_r         : std_logic := '0';
+  signal prompt_chip_adv_r  : std_logic := '0';
+  signal lead_chip_adv_r    : std_logic := '0';
+  signal lead_seed_pending_r: std_logic := '0';
+  signal prompt_chip_s      : std_logic;
+  signal lead_chip_s        : std_logic;
+  signal lag_chip_r         : std_logic := '0';
+  signal carr_lo_i_s        : signed(15 downto 0);
+  signal carr_lo_q_s        : signed(15 downto 0);
+  signal carr_wipe_i_s      : signed(15 downto 0);
+  signal carr_wipe_q_s      : signed(15 downto 0);
+
+  function abs_s32(x : signed(31 downto 0)) return unsigned is
+    variable v : signed(31 downto 0);
+  begin
+    if x < 0 then
+      v := -x;
+    else
+      v := x;
+    end if;
+    return unsigned(v);
+  end function;
+
+  function abs_i(x : integer) return integer is
+  begin
+    if x < 0 then
+      return -x;
+    end if;
+    return x;
+  end function;
+
+  function clamp_s16(x : integer) return signed is
+  begin
+    if x > 32767 then
+      return to_signed(32767, 16);
+    elsif x < -32768 then
+      return to_signed(-32768, 16);
+    else
+      return to_signed(x, 16);
+    end if;
+  end function;
+
+  function sat_s32_to_s24(x : signed(31 downto 0)) return signed is
+    constant C_MAX24 : signed(31 downto 0) := to_signed(8388607, 32);
+    constant C_MIN24 : signed(31 downto 0) := to_signed(-8388608, 32);
+  begin
+    if x > C_MAX24 then
+      return to_signed(8388607, 24);
+    elsif x < C_MIN24 then
+      return to_signed(-8388608, 24);
+    else
+      return resize(x, 24);
+    end if;
+  end function;
+
+  function acq_code_to_chip(code_v : unsigned(10 downto 0)) return unsigned is
+    variable code_i : integer;
+  begin
+    code_i := to_integer(code_v) mod 1023;
+    if code_i < 0 then
+      code_i := 0;
+    end if;
+    return to_unsigned(code_i, 11);
+  end function;
+
+  function isqrt(x : integer) return integer is
+    variable n : integer := x;
+    variable r : integer := 0;
+    variable b : integer := 1;
+  begin
+    if n <= 0 then
+      return 0;
+    end if;
+
+    while b <= n / 4 loop
+      b := b * 4;
+    end loop;
+
+    while b > 0 loop
+      if n >= r + b then
+        n := n - (r + b);
+        r := (r / 2) + b;
+      else
+        r := r / 2;
+      end if;
+      b := b / 4;
+    end loop;
+    return r;
+  end function;
+
+  function lo_cos_q15(phase_idx : unsigned(3 downto 0)) return signed is
+    variable idx_i : integer;
+  begin
+    idx_i := to_integer(phase_idx);
+    case idx_i is
+      when 0  => return to_signed(32767, 16);
+      when 1  => return to_signed(30274, 16);
+      when 2  => return to_signed(23170, 16);
+      when 3  => return to_signed(12540, 16);
+      when 4  => return to_signed(0, 16);
+      when 5  => return to_signed(-12540, 16);
+      when 6  => return to_signed(-23170, 16);
+      when 7  => return to_signed(-30274, 16);
+      when 8  => return to_signed(-32767, 16);
+      when 9  => return to_signed(-30274, 16);
+      when 10 => return to_signed(-23170, 16);
+      when 11 => return to_signed(-12540, 16);
+      when 12 => return to_signed(0, 16);
+      when 13 => return to_signed(12540, 16);
+      when 14 => return to_signed(23170, 16);
+      when others => return to_signed(30274, 16);
+    end case;
+  end function;
+
+  function lo_sin_q15(phase_idx : unsigned(3 downto 0)) return signed is
+    variable idx_i : integer;
+  begin
+    idx_i := to_integer(phase_idx);
+    case idx_i is
+      when 0  => return to_signed(0, 16);
+      when 1  => return to_signed(12540, 16);
+      when 2  => return to_signed(23170, 16);
+      when 3  => return to_signed(30274, 16);
+      when 4  => return to_signed(32767, 16);
+      when 5  => return to_signed(30274, 16);
+      when 6  => return to_signed(23170, 16);
+      when 7  => return to_signed(12540, 16);
+      when 8  => return to_signed(0, 16);
+      when 9  => return to_signed(-12540, 16);
+      when 10 => return to_signed(-23170, 16);
+      when 11 => return to_signed(-30274, 16);
+      when 12 => return to_signed(-32767, 16);
+      when 13 => return to_signed(-30274, 16);
+      when 14 => return to_signed(-23170, 16);
+      when others => return to_signed(-12540, 16);
+    end case;
+  end function;
+
+  function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
+  begin
+    return to_signed(to_integer(dopp_hz) * C_CARR_FCW_PER_HZ, 32);
+  end function;
+
+  function cn0_dbhz_from_ratio_x100(snr_ratio_x100 : integer) return integer is
+    variable ratio_i        : integer;
+    variable base_i         : integer;
+    variable octave_i       : integer;
+    variable frac_q10_i     : integer;
+    variable seg_i          : integer;
+    variable seg_frac_i     : integer;
+    variable y0_i           : integer;
+    variable y1_i           : integer;
+    variable interp_i       : integer;
+    variable log10_db100_i  : integer;
+    variable cn0_i          : integer;
+  begin
+    if snr_ratio_x100 <= 0 then
+      return 0;
+    end if;
+
+    ratio_i := snr_ratio_x100;
+    base_i := 1;
+    octave_i := 0;
+    while base_i <= ratio_i / 2 loop
+      base_i := base_i * 2;
+      octave_i := octave_i + 1;
+    end loop;
+
+    frac_q10_i := ((ratio_i - base_i) * 1024) / base_i;
+    if frac_q10_i < 0 then
+      frac_q10_i := 0;
+    elsif frac_q10_i > 1023 then
+      frac_q10_i := 1023;
+    end if;
+
+    seg_i := frac_q10_i / 64;
+    if seg_i < 0 then
+      seg_i := 0;
+    elsif seg_i > 15 then
+      seg_i := 15;
+    end if;
+    seg_frac_i := frac_q10_i - (seg_i * 64);
+
+    y0_i := C_LOG10_OCTAVE_LUT_DB100(seg_i);
+    y1_i := C_LOG10_OCTAVE_LUT_DB100(seg_i + 1);
+    interp_i := y0_i + (((y1_i - y0_i) * seg_frac_i + 32) / 64);
+
+    log10_db100_i := (octave_i * 301) + interp_i;
+    -- C/N0[dB-Hz] = 10*log10(SNR) - 10*log10(Tint), Tint=1 ms => +30 dB.
+    cn0_i := (log10_db100_i + 3050) / 100;
+    if cn0_i < 0 then
+      return 0;
+    elsif cn0_i > 99 then
+      return 99;
+    else
+      return cn0_i;
+    end if;
+  end function;
 begin
   track_state_o  <= state_r;
   code_lock_o    <= code_lock_r;
@@ -51,80 +302,533 @@ begin
   prn_o          <= prn_r;
   dopp_o         <= dopp_r;
   code_o         <= code_phase_r;
-  prompt_i_o     <= prompt_i_acc_r;
-  prompt_q_o     <= prompt_q_acc_r;
+  cn0_dbhz_o     <= cn0_dbhz_r;
+  prompt_i_o     <= prompt_i_rep_r;
+  prompt_q_o     <= prompt_q_rep_r;
+  carr_lo_i_s    <= lo_cos_q15(unsigned(carr_nco_phase_r(31 downto 28)));
+  carr_lo_q_s    <= -lo_sin_q15(unsigned(carr_nco_phase_r(31 downto 28)));
+
+  carr_wipe_u : entity work.complex_mixer
+    port map (
+      i_in  => s_i,
+      q_in  => s_q,
+      lo_i  => carr_lo_i_s,
+      lo_q  => carr_lo_q_s,
+      i_out => carr_wipe_i_s,
+      q_out => carr_wipe_q_s
+    );
+
+  prompt_prn_u : entity work.ca_prn_gen
+    port map (
+      clk          => clk,
+      rst_n        => rst_n,
+      init         => prn_init_r,
+      chip_advance => prompt_chip_adv_r,
+      prn          => prn_r,
+      chip         => prompt_chip_s
+    );
+
+  lead_prn_u : entity work.ca_prn_gen
+    port map (
+      clk          => clk,
+      rst_n        => rst_n,
+      init         => prn_init_r,
+      chip_advance => lead_chip_adv_r,
+      prn          => prn_r,
+      chip         => lead_chip_s
+    );
 
   process (clk)
-    variable next_code : unsigned(31 downto 0);
+    variable p_i                : signed(15 downto 0);
+    variable p_q                : signed(15 downto 0);
+    variable e_i                : signed(15 downto 0);
+    variable e_q                : signed(15 downto 0);
+    variable l_i                : signed(15 downto 0);
+    variable l_q                : signed(15 downto 0);
+    variable next_prompt_i      : signed(31 downto 0);
+    variable next_prompt_q      : signed(31 downto 0);
+    variable next_early_i       : signed(31 downto 0);
+    variable next_early_q       : signed(31 downto 0);
+    variable next_late_i        : signed(31 downto 0);
+    variable next_late_q        : signed(31 downto 0);
+    variable next_code          : unsigned(31 downto 0);
+    variable next_carr_phase    : signed(31 downto 0);
+    variable carr_fcw_v         : signed(31 downto 0);
+    variable chip_adv_v         : std_logic;
+    variable prompt_mag_i       : integer;
+    variable early_mag_i        : integer;
+    variable late_mag_i         : integer;
+    variable dll_err_i          : integer;
+    variable carrier_err_i      : integer;
+    variable prev_i_s           : integer;
+    variable prev_q_s           : integer;
+    variable curr_i_s           : integer;
+    variable curr_q_s           : integer;
+    variable cross_i            : integer;
+    variable dot_i              : integer;
+    variable carrier_err_norm_den_i : integer;
+    variable carrier_err_dband_i: integer;
+    variable code_enter_v       : boolean;
+    variable code_track_v       : boolean;
+    variable carrier_enter_v    : boolean;
+    variable carrier_track_v    : boolean;
+    variable good_enter_v       : boolean;
+    variable good_track_v       : boolean;
+    variable fcw_floor          : unsigned(31 downto 0);
+    variable fcw_ceil           : unsigned(31 downto 0);
+    variable doppler_step_hz_i  : integer;
+    variable dopp_i             : integer;
+    variable prompt_i_s         : integer;
+    variable prompt_q_s         : integer;
+    variable sig_pow_i          : integer;
+    variable m2_sample_i        : integer;
+    variable m4_sample_i        : integer;
+    variable m2_avg_i           : integer;
+    variable m4_avg_i           : integer;
+    variable cn0_term_i         : integer;
+    variable cn0_sqrt_i         : integer;
+    variable snr_num_i          : integer;
+    variable snr_den_i          : integer;
+    variable snr_ratio_i        : integer;
+    variable nbd_sample_i       : integer;
+    variable nbp_sample_i       : integer;
+    variable nbd_avg_i          : integer;
+    variable nbp_avg_i          : integer;
+    variable carrier_metric_i   : integer;
+    variable carrier_enter_th_i : integer;
+    variable carrier_track_th_i : integer;
+    variable max_lock_fail_v    : integer;
+    variable cn0_inst_i         : integer;
+    variable cn0_i              : integer;
+    variable cn0_report_i       : integer;
+    variable cn0_valid_v        : boolean;
   begin
     if rising_edge(clk) then
       if rst_n = '0' then
-        state_r          <= TRACK_IDLE;
-        prn_r            <= (others => '0');
-        dopp_r           <= (others => '0');
-        code_phase_r     <= (others => '0');
-        code_nco_phase_r <= (others => '0');
-        prompt_i_acc_r   <= (others => '0');
-        prompt_q_acc_r   <= (others => '0');
-        ms_sample_cnt_r  <= 0;
-        ms_count_r       <= 0;
-        report_valid_r   <= '0';
-        code_lock_r      <= '0';
-        carrier_lock_r   <= '0';
+        state_r             <= TRACK_IDLE;
+        prn_r               <= (others => '0');
+        dopp_r              <= (others => '0');
+        code_phase_r        <= (others => '0');
+        code_nco_phase_r    <= (others => '0');
+        code_fcw_r          <= C_CODE_NCO_FCW;
+        carr_nco_phase_r    <= (others => '0');
+        prompt_i_acc_r      <= (others => '0');
+        prompt_q_acc_r      <= (others => '0');
+        early_i_acc_r       <= (others => '0');
+        early_q_acc_r       <= (others => '0');
+        late_i_acc_r        <= (others => '0');
+        late_q_acc_r        <= (others => '0');
+        prompt_i_rep_r      <= (others => '0');
+        prompt_q_rep_r      <= (others => '0');
+        prev_prompt_i_r     <= (others => '0');
+        prev_prompt_q_r     <= (others => '0');
+        prev_prompt_valid_r <= '0';
+        ms_sample_cnt_r     <= 0;
+        good_ms_cnt_r       <= 0;
+        lock_fail_cnt_r     <= 0;
+        m2_avg_r            <= 0;
+        m4_avg_r            <= 0;
+        nbd_avg_r           <= 0;
+        nbp_avg_r           <= 1;
+        carrier_lock_metric_r <= (others => '0');
+        report_valid_r      <= '0';
+        code_lock_r         <= '0';
+        carrier_lock_r      <= '0';
+        cn0_dbhz_r          <= (others => '0');
+        prn_init_r          <= '0';
+        prompt_chip_adv_r   <= '0';
+        lead_chip_adv_r     <= '0';
+        lead_seed_pending_r <= '0';
+        lag_chip_r          <= '0';
       else
-        report_valid_r <= '0';
+        report_valid_r    <= '0';
+        prn_init_r        <= '0';
+        prompt_chip_adv_r <= '0';
+        lead_chip_adv_r   <= '0';
 
         if core_en = '0' or tracking_en = '0' then
-          state_r     <= TRACK_IDLE;
-          code_lock_r <= '0';
-          carrier_lock_r <= '0';
+          state_r             <= TRACK_IDLE;
+          code_lock_r         <= '0';
+          carrier_lock_r      <= '0';
+          cn0_dbhz_r          <= (others => '0');
+          ms_sample_cnt_r     <= 0;
+          good_ms_cnt_r       <= 0;
+          lock_fail_cnt_r     <= 0;
+          m2_avg_r            <= 0;
+          m4_avg_r            <= 0;
+          nbd_avg_r           <= 0;
+          nbp_avg_r           <= 1;
+          carrier_lock_metric_r <= (others => '0');
+          prev_prompt_valid_r <= '0';
+          prompt_i_acc_r      <= (others => '0');
+          prompt_q_acc_r      <= (others => '0');
+          early_i_acc_r       <= (others => '0');
+          early_q_acc_r       <= (others => '0');
+          late_i_acc_r        <= (others => '0');
+          late_q_acc_r        <= (others => '0');
+          carr_nco_phase_r    <= (others => '0');
         else
-          case state_r is
-            when TRACK_IDLE =>
-              ms_sample_cnt_r <= 0;
-              ms_count_r      <= 0;
-              prompt_i_acc_r  <= (others => '0');
-              prompt_q_acc_r  <= (others => '0');
-              if acq_valid = '1' then
-                prn_r        <= acq_prn;
-                dopp_r       <= acq_dopp;
-                code_phase_r <= acq_code;
-                state_r      <= TRACK_PULLIN;
-              else
-                prn_r        <= init_prn;
-                dopp_r       <= init_dopp;
+          if acq_valid = '1' then
+            -- Allow channel retune/reassignment at runtime when scheduler picks a stronger PRN.
+            prn_r               <= acq_prn;
+            dopp_r              <= acq_dopp;
+            code_phase_r        <= acq_code_to_chip(acq_code);
+            code_nco_phase_r    <= shift_left(resize(acq_code, 32), 21);
+            carr_nco_phase_r    <= (others => '0');
+            state_r             <= TRACK_PULLIN;
+            code_lock_r         <= '0';
+            carrier_lock_r      <= '0';
+            cn0_dbhz_r          <= (others => '0');
+            ms_sample_cnt_r     <= 0;
+            good_ms_cnt_r       <= 0;
+            lock_fail_cnt_r     <= 0;
+            m2_avg_r            <= 0;
+            m4_avg_r            <= 0;
+            nbd_avg_r           <= 0;
+            nbp_avg_r           <= 1;
+            carrier_lock_metric_r <= (others => '0');
+            prev_prompt_valid_r <= '0';
+            prompt_i_acc_r      <= (others => '0');
+            prompt_q_acc_r      <= (others => '0');
+            early_i_acc_r       <= (others => '0');
+            early_q_acc_r       <= (others => '0');
+            late_i_acc_r        <= (others => '0');
+            late_q_acc_r        <= (others => '0');
+            code_fcw_r          <= C_CODE_NCO_FCW;
+            prn_init_r          <= '1';
+            lead_seed_pending_r <= '1';
+            lag_chip_r          <= '0';
+          else
+            case state_r is
+              when TRACK_IDLE =>
+                ms_sample_cnt_r     <= 0;
+                good_ms_cnt_r       <= 0;
+                lock_fail_cnt_r     <= 0;
+                code_lock_r         <= '0';
+                carrier_lock_r      <= '0';
+                cn0_dbhz_r          <= (others => '0');
+                prev_prompt_valid_r <= '0';
+                prompt_i_acc_r      <= (others => '0');
+                prompt_q_acc_r      <= (others => '0');
+                early_i_acc_r       <= (others => '0');
+                early_q_acc_r       <= (others => '0');
+                late_i_acc_r        <= (others => '0');
+                late_q_acc_r        <= (others => '0');
+                m2_avg_r            <= 0;
+                m4_avg_r            <= 0;
+                nbd_avg_r           <= 0;
+                nbp_avg_r           <= 1;
+                carrier_lock_metric_r <= (others => '0');
+                code_fcw_r          <= C_CODE_NCO_FCW;
+                prn_r               <= init_prn;
+                dopp_r              <= init_dopp;
+                code_phase_r        <= (others => '0');
+                code_nco_phase_r    <= (others => '0');
+                carr_nco_phase_r    <= (others => '0');
+
+              when TRACK_PULLIN | TRACK_LOCKED =>
+              if lead_seed_pending_r = '1' then
+                lead_chip_adv_r     <= '1';
+                lead_seed_pending_r <= '0';
               end if;
 
-            when TRACK_PULLIN | TRACK_LOCKED =>
               if s_valid = '1' then
-                prompt_i_acc_r <= prompt_i_acc_r + resize(s_i, prompt_i_acc_r'length);
-                prompt_q_acc_r <= prompt_q_acc_r + resize(s_q, prompt_q_acc_r'length);
+                carr_fcw_v := carr_fcw_from_hz(dopp_r);
+                next_carr_phase := carr_nco_phase_r + carr_fcw_v;
+                carr_nco_phase_r <= next_carr_phase;
 
-                next_code := code_nco_phase_r + C_CODE_NCO_FCW;
+                if prompt_chip_s = '1' then
+                  p_i := -carr_wipe_i_s;
+                  p_q := -carr_wipe_q_s;
+                else
+                  p_i := carr_wipe_i_s;
+                  p_q := carr_wipe_q_s;
+                end if;
+
+                if lag_chip_r = '1' then
+                  e_i := -carr_wipe_i_s;
+                  e_q := -carr_wipe_q_s;
+                else
+                  e_i := carr_wipe_i_s;
+                  e_q := carr_wipe_q_s;
+                end if;
+
+                if lead_chip_s = '1' then
+                  l_i := -carr_wipe_i_s;
+                  l_q := -carr_wipe_q_s;
+                else
+                  l_i := carr_wipe_i_s;
+                  l_q := carr_wipe_q_s;
+                end if;
+
+                next_prompt_i := prompt_i_acc_r + resize(p_i, prompt_i_acc_r'length);
+                next_prompt_q := prompt_q_acc_r + resize(p_q, prompt_q_acc_r'length);
+                next_early_i  := early_i_acc_r + resize(e_i, early_i_acc_r'length);
+                next_early_q  := early_q_acc_r + resize(e_q, early_q_acc_r'length);
+                next_late_i   := late_i_acc_r + resize(l_i, late_i_acc_r'length);
+                next_late_q   := late_q_acc_r + resize(l_q, late_q_acc_r'length);
+
+                prompt_i_acc_r <= next_prompt_i;
+                prompt_q_acc_r <= next_prompt_q;
+                early_i_acc_r  <= next_early_i;
+                early_q_acc_r  <= next_early_q;
+                late_i_acc_r   <= next_late_i;
+                late_q_acc_r   <= next_late_q;
+
+                next_code := code_nco_phase_r + code_fcw_r;
+                chip_adv_v := '0';
+                if next_code < code_nco_phase_r then
+                  chip_adv_v := '1';
+                end if;
+
                 code_nco_phase_r <= next_code;
-                code_phase_r <= resize(next_code(31 downto 21), code_phase_r'length);
+
+                if chip_adv_v = '1' then
+                  prompt_chip_adv_r <= '1';
+                  lead_chip_adv_r   <= '1';
+                  lag_chip_r        <= prompt_chip_s;
+                  if code_phase_r = to_unsigned(1022, code_phase_r'length) then
+                    code_phase_r <= (others => '0');
+                  else
+                    code_phase_r <= code_phase_r + 1;
+                  end if;
+                end if;
 
                 if ms_sample_cnt_r = C_SAMPLES_PER_MS - 1 then
-                  report_valid_r  <= '1';
+                  prompt_mag_i := to_integer(abs_s32(next_prompt_i) + abs_s32(next_prompt_q));
+                  early_mag_i  := to_integer(abs_s32(next_early_i) + abs_s32(next_early_q));
+                  late_mag_i   := to_integer(abs_s32(next_late_i) + abs_s32(next_late_q));
+                  dll_err_i    := early_mag_i - late_mag_i;
+
+                  -- Moment-based C/N0 estimator (M2/M4) with light smoothing.
+                  prompt_i_s := to_integer(shift_right(next_prompt_i, 12));
+                  prompt_q_s := to_integer(shift_right(next_prompt_q, 12));
+                  sig_pow_i := prompt_i_s * prompt_i_s + prompt_q_s * prompt_q_s;
+
+                  m2_sample_i := sig_pow_i / C_CN0_M2_SCALE;
+                  if m2_sample_i < 1 then
+                    m2_sample_i := 1;
+                  end if;
+                  m4_sample_i := m2_sample_i * m2_sample_i;
+
+                  m2_avg_i := m2_avg_r + (m2_sample_i - m2_avg_r) / C_LOCK_SMOOTH_DIV;
+                  m4_avg_i := m4_avg_r + (m4_sample_i - m4_avg_r) / C_LOCK_SMOOTH_DIV;
+                  if m2_avg_i < 1 then
+                    m2_avg_i := 1;
+                  end if;
+                  if m4_avg_i < 1 then
+                    m4_avg_i := 1;
+                  end if;
+                  m2_avg_r <= m2_avg_i;
+                  m4_avg_r <= m4_avg_i;
+
+                  cn0_term_i := (2 * m2_avg_i * m2_avg_i) - m4_avg_i;
+                  if cn0_term_i < 0 then
+                    cn0_term_i := 0;
+                  end if;
+                  cn0_sqrt_i := isqrt(cn0_term_i);
+                  snr_num_i := cn0_sqrt_i;
+                  snr_den_i := m2_avg_i - cn0_sqrt_i;
+                  cn0_i := to_integer(cn0_dbhz_r);
+                  cn0_valid_v := true;
+                  if cn0_sqrt_i = 0 then
+                    cn0_inst_i := 0;
+                  else
+                    -- Keep estimator responsive without forcing hard saturation.
+                    if snr_den_i <= 0 then
+                      snr_den_i := 1;
+                    end if;
+                    snr_ratio_i := (snr_num_i * 100) / snr_den_i;
+                    if snr_ratio_i < 1 then
+                      cn0_inst_i := 0;
+                    else
+                      cn0_inst_i := cn0_dbhz_from_ratio_x100(snr_ratio_i);
+                    end if;
+                  end if;
+
+                  if cn0_valid_v then
+                    cn0_i := to_integer(cn0_dbhz_r) + (cn0_inst_i - to_integer(cn0_dbhz_r)) / C_LOCK_SMOOTH_DIV;
+                  end if;
+                  if cn0_i < 0 then
+                    cn0_i := 0;
+                  elsif cn0_i > 99 then
+                    cn0_i := 99;
+                  end if;
+                  cn0_report_i := cn0_i;
+                  if code_lock_r = '0' then
+                    cn0_report_i := 0;
+                  end if;
+                  cn0_dbhz_r <= to_unsigned(cn0_report_i, cn0_dbhz_r'length);
+
+                  -- Carrier lock detector using cos(2*phase_error) ~= NBD/NBP.
+                  nbd_sample_i := (prompt_i_s * prompt_i_s) - (prompt_q_s * prompt_q_s);
+                  nbp_sample_i := (prompt_i_s * prompt_i_s) + (prompt_q_s * prompt_q_s);
+                  if nbp_sample_i < 1 then
+                    nbp_sample_i := 1;
+                  end if;
+
+                  nbd_avg_i := nbd_avg_r + (nbd_sample_i - nbd_avg_r) / C_LOCK_SMOOTH_DIV;
+                  nbp_avg_i := nbp_avg_r + (nbp_sample_i - nbp_avg_r) / C_LOCK_SMOOTH_DIV;
+                  if nbp_avg_i < 1 then
+                    nbp_avg_i := 1;
+                  end if;
+                  nbd_avg_r <= nbd_avg_i;
+                  nbp_avg_r <= nbp_avg_i;
+
+                  carrier_metric_i := (nbd_avg_i * 32768) / nbp_avg_i;
+                  if carrier_metric_i > 32767 then
+                    carrier_metric_i := 32767;
+                  elsif carrier_metric_i < -32768 then
+                    carrier_metric_i := -32768;
+                  end if;
+                  carrier_lock_metric_r <= to_signed(carrier_metric_i, carrier_lock_metric_r'length);
+
+                  if prev_prompt_valid_r = '1' then
+                    prev_i_s := to_integer(shift_right(prev_prompt_i_r, 12));
+                    prev_q_s := to_integer(shift_right(prev_prompt_q_r, 12));
+                    curr_i_s := to_integer(shift_right(next_prompt_i, 12));
+                    curr_q_s := to_integer(shift_right(next_prompt_q, 12));
+                    cross_i := prev_i_s * curr_q_s - prev_q_s * curr_i_s;
+                    dot_i   := prev_i_s * curr_i_s + prev_q_s * curr_q_s;
+                    carrier_err_norm_den_i := (abs_i(dot_i) / C_CARR_ERR_NORM_GAIN) + 1;
+                    carrier_err_i := cross_i / carrier_err_norm_den_i;
+                  else
+                    curr_i_s := to_integer(shift_right(next_prompt_i, 12));
+                    curr_q_s := to_integer(shift_right(next_prompt_q, 12));
+                    carrier_err_norm_den_i := (abs_i(curr_i_s) / 8) + 1;
+                    carrier_err_i := curr_q_s / carrier_err_norm_den_i;
+                  end if;
+
+                  fcw_floor := C_CODE_NCO_FCW - C_CODE_FCW_DELTA_MAX;
+                  fcw_ceil  := C_CODE_NCO_FCW + C_CODE_FCW_DELTA_MAX;
+
+                  if dll_err_i > C_DLL_ERR_TRACK_MAX then
+                    if code_fcw_r > (fcw_floor + C_CODE_FCW_STEP) then
+                      code_fcw_r <= code_fcw_r - C_CODE_FCW_STEP;
+                    else
+                      code_fcw_r <= fcw_floor;
+                    end if;
+                  elsif dll_err_i < -C_DLL_ERR_TRACK_MAX then
+                    if code_fcw_r < (fcw_ceil - C_CODE_FCW_STEP) then
+                      code_fcw_r <= code_fcw_r + C_CODE_FCW_STEP;
+                    else
+                      code_fcw_r <= fcw_ceil;
+                    end if;
+                  end if;
+
+                  if state_r = TRACK_LOCKED then
+                    doppler_step_hz_i := C_DOPP_STEP_LOCK_HZ;
+                    carrier_err_dband_i := C_CARR_ERR_DBAND_LOCK;
+                  else
+                    doppler_step_hz_i := C_DOPP_STEP_PULLIN_HZ;
+                    carrier_err_dband_i := C_CARR_ERR_DBAND_PULLIN;
+                  end if;
+
+                  dopp_i := to_integer(dopp_r);
+                  if carrier_err_i > carrier_err_dband_i then
+                    dopp_i := dopp_i - doppler_step_hz_i;
+                  elsif carrier_err_i < -carrier_err_dband_i then
+                    dopp_i := dopp_i + doppler_step_hz_i;
+                  end if;
+                  dopp_r <= clamp_s16(dopp_i);
+
+                  code_enter_v := (prompt_mag_i > C_PROMPT_MAG_MIN) and
+                                  (cn0_i >= to_integer(min_cn0_dbhz_i)) and
+                                  (abs_i(dll_err_i) < C_DLL_ERR_LOCK_MAX);
+                  code_track_v := (prompt_mag_i > C_PROMPT_MAG_MIN) and
+                                  (cn0_i >= to_integer(min_cn0_dbhz_i)) and
+                                  (abs_i(dll_err_i) < C_DLL_ERR_TRACK_MAX);
+                  carrier_enter_th_i := to_integer(carrier_lock_th_i);
+                  carrier_track_th_i := carrier_enter_th_i - C_CARR_LOCK_HYST_Q15;
+                  if carrier_track_th_i < -32768 then
+                    carrier_track_th_i := -32768;
+                  end if;
+
+                  carrier_enter_v := (carrier_metric_i >= carrier_enter_th_i) and
+                                     (abs_i(carrier_err_i) < C_CARR_ERR_LOCK_MAX);
+                  carrier_track_v := (carrier_metric_i >= carrier_track_th_i) and
+                                     (abs_i(carrier_err_i) < C_CARR_ERR_TRACK_MAX);
+                  good_enter_v := code_enter_v;
+                  good_track_v := code_track_v;
+
+                  if good_enter_v then
+                    if good_ms_cnt_r < 255 then
+                      good_ms_cnt_r <= good_ms_cnt_r + 1;
+                    end if;
+                  else
+                    good_ms_cnt_r <= 0;
+                  end if;
+                  max_lock_fail_v := to_integer(max_lock_fail_i);
+                  if max_lock_fail_v < 1 then
+                    max_lock_fail_v := 1;
+                  end if;
+
+                  if state_r = TRACK_PULLIN then
+                    if good_enter_v and carrier_enter_v and good_ms_cnt_r >= C_LOCK_ENTER_GOOD_MS then
+                      state_r        <= TRACK_LOCKED;
+                      code_lock_r    <= '1';
+                      carrier_lock_r <= '1';
+                      lock_fail_cnt_r <= 0;
+                    else
+                      if good_enter_v then
+                        code_lock_r <= '1';
+                      else
+                        code_lock_r <= '0';
+                      end if;
+                      if carrier_enter_v then
+                        carrier_lock_r <= '1';
+                      else
+                        carrier_lock_r <= '0';
+                      end if;
+                      lock_fail_cnt_r <= 0;
+                    end if;
+                  else
+                    if good_track_v then
+                      lock_fail_cnt_r <= 0;
+                      code_lock_r    <= '1';
+                      if carrier_track_v then
+                        carrier_lock_r <= '1';
+                      else
+                        carrier_lock_r <= '0';
+                      end if;
+                    else
+                      if lock_fail_cnt_r + 1 >= max_lock_fail_v then
+                        state_r        <= TRACK_PULLIN;
+                        code_lock_r    <= '0';
+                        carrier_lock_r <= '0';
+                        lock_fail_cnt_r <= 0;
+                      else
+                        lock_fail_cnt_r <= lock_fail_cnt_r + 1;
+                        code_lock_r    <= '1';
+                        if carrier_track_v then
+                          carrier_lock_r <= '1';
+                        else
+                          carrier_lock_r <= '0';
+                        end if;
+                      end if;
+                    end if;
+                  end if;
+
+                  report_valid_r      <= '1';
+                  prompt_i_rep_r      <= sat_s32_to_s24(next_prompt_i);
+                  prompt_q_rep_r      <= sat_s32_to_s24(next_prompt_q);
+                  prev_prompt_i_r     <= next_prompt_i;
+                  prev_prompt_q_r     <= next_prompt_q;
+                  prev_prompt_valid_r <= '1';
+
                   ms_sample_cnt_r <= 0;
                   prompt_i_acc_r  <= (others => '0');
                   prompt_q_acc_r  <= (others => '0');
-                  if ms_count_r < 255 then
-                    ms_count_r <= ms_count_r + 1;
-                  end if;
-
-                  if ms_count_r >= 19 then
-                    state_r       <= TRACK_LOCKED;
-                    code_lock_r   <= '1';
-                    carrier_lock_r<= '1';
-                  else
-                    state_r       <= TRACK_PULLIN;
-                  end if;
+                  early_i_acc_r   <= (others => '0');
+                  early_q_acc_r   <= (others => '0');
+                  late_i_acc_r    <= (others => '0');
+                  late_q_acc_r    <= (others => '0');
                 else
                   ms_sample_cnt_r <= ms_sample_cnt_r + 1;
                 end if;
               end if;
-          end case;
+            end case;
+          end if;
         end if;
       end if;
     end if;

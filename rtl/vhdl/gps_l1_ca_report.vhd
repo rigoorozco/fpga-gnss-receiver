@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.gps_l1_ca_pkg.all;
+use work.gps_l1_ca_log_pkg.all;
 
 entity gps_l1_ca_report is
   port (
@@ -147,18 +148,18 @@ begin
           pkt_index_r <= 0;
 
           -- pragma translate_off
-          report "UART report (pre-encoding): " &
-                 "PRN=" & integer'image(to_integer(prn)) &
-                 ", state=" & state_to_text(track_state) &
-                 ", sample_counter=" & integer'image(to_integer(sample_counter)) &
-                 ", doppler_hz=" & integer'image(to_integer(doppler_hz)) &
-                 ", code_phase=" & integer'image(to_integer(code_phase)) &
-                 ", prompt_i=" & integer'image(to_integer(prompt_i)) &
-                 ", prompt_q=" & integer'image(to_integer(prompt_q)) &
-                 ", code_lock=" & sl_to_text(code_lock) &
-                 ", carrier_lock=" & sl_to_text(carrier_lock) &
-                 ", nav_valid=" & sl_to_text(nav_valid) &
-                 ", nav_bit=" & std_logic'image(nav_bit);
+          log_msg("UART report (pre-encoding): " &
+                  "PRN=" & integer'image(to_integer(prn)) &
+                  ", state=" & state_to_text(track_state) &
+                  ", sample_counter=" & integer'image(to_integer(sample_counter)) &
+                  ", doppler_hz=" & integer'image(to_integer(doppler_hz)) &
+                  ", code_phase=" & integer'image(to_integer(code_phase)) &
+                  ", prompt_i=" & integer'image(to_integer(prompt_i)) &
+                  ", prompt_q=" & integer'image(to_integer(prompt_q)) &
+                  ", code_lock=" & sl_to_text(code_lock) &
+                  ", carrier_lock=" & sl_to_text(carrier_lock) &
+                  ", nav_valid=" & sl_to_text(nav_valid) &
+                  ", nav_bit=" & std_logic'image(nav_bit));
           -- pragma translate_on
         end if;
 
@@ -168,8 +169,8 @@ begin
 
           -- pragma translate_off
           if C_LOG_UART_BYTES then
-            report "UART byte[" & integer'image(pkt_index_r) &
-                   "] = 0x" & to_hex8(pkt_r(pkt_index_r));
+            log_msg("UART byte[" & integer'image(pkt_index_r) &
+                    "] = 0x" & to_hex8(pkt_r(pkt_index_r)));
           end if;
           -- pragma translate_on
 

@@ -20,6 +20,7 @@ package gps_l1_ca_pkg is
   type track_state_arr_t is array (natural range <>) of track_state_t;
   type sl_arr_t          is array (natural range <>) of std_logic;
   type u6_arr_t          is array (natural range <>) of unsigned(5 downto 0);
+  type u8_arr_t          is array (natural range <>) of unsigned(7 downto 0);
   type u11_arr_t         is array (natural range <>) of unsigned(10 downto 0);
   type s16_arr_t         is array (natural range <>) of signed(15 downto 0);
   type s24_arr_t         is array (natural range <>) of signed(23 downto 0);

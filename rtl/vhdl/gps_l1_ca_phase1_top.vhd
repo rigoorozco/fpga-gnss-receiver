@@ -72,6 +72,9 @@ architecture rtl of gps_l1_ca_phase1_top is
   signal trk_code       : unsigned(10 downto 0);
   signal prompt_i       : signed(23 downto 0);
   signal prompt_q       : signed(23 downto 0);
+  signal min_cn0_dbhz   : unsigned(7 downto 0) := to_unsigned(22, 8);
+  signal carrier_lock_th: signed(15 downto 0) := to_signed(19661, 16);
+  signal max_lock_fail  : unsigned(7 downto 0) := to_unsigned(50, 8);
 
   signal nav_valid      : std_logic;
   signal nav_bit        : std_logic;
@@ -180,6 +183,9 @@ begin
       s_valid        => in_tvalid,
       s_i            => in_i,
       s_q            => in_q,
+      min_cn0_dbhz_i => min_cn0_dbhz,
+      carrier_lock_th_i => carrier_lock_th,
+      max_lock_fail_i => max_lock_fail,
       track_state_o  => track_state,
       code_lock_o    => code_lock,
       carrier_lock_o => carrier_lock,
@@ -187,6 +193,7 @@ begin
       prn_o          => trk_prn,
       dopp_o         => trk_dopp,
       code_o         => trk_code,
+      cn0_dbhz_o     => open,
       prompt_i_o     => prompt_i,
       prompt_q_o     => prompt_q
     );

@@ -16,6 +16,9 @@ entity gps_l1_ca_chan_bank is
     s_valid           : in  std_logic;
     s_i               : in  signed(15 downto 0);
     s_q               : in  signed(15 downto 0);
+    min_cn0_dbhz_i    : in  unsigned(7 downto 0);
+    carrier_lock_th_i : in  signed(15 downto 0);
+    max_lock_fail_i   : in  unsigned(7 downto 0);
     assign_valid_i    : in  std_logic;
     assign_ch_idx_i   : in  unsigned(7 downto 0);
     assign_prn_i      : in  unsigned(5 downto 0);
@@ -29,6 +32,7 @@ entity gps_l1_ca_chan_bank is
     chan_prn_o        : out u6_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_dopp_o       : out s16_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_code_o       : out u11_arr_t(0 to G_NUM_CHANNELS - 1);
+    chan_cn0_dbhz_o   : out u8_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_prompt_i_o   : out s24_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_prompt_q_o   : out s24_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_nav_valid_o  : out std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
@@ -48,6 +52,7 @@ architecture rtl of gps_l1_ca_chan_bank is
   signal chan_prn_r          : u6_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_dopp_r         : s16_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_code_r         : u11_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal chan_cn0_dbhz_r     : u8_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_prompt_i_r     : s24_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_prompt_q_r     : s24_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_nav_valid_r    : std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
@@ -61,6 +66,7 @@ begin
   chan_prn_o          <= chan_prn_r;
   chan_dopp_o         <= chan_dopp_r;
   chan_code_o         <= chan_code_r;
+  chan_cn0_dbhz_o     <= chan_cn0_dbhz_r;
   chan_prompt_i_o     <= chan_prompt_i_r;
   chan_prompt_q_o     <= chan_prompt_q_r;
   chan_nav_valid_o    <= chan_nav_valid_r;
@@ -109,6 +115,9 @@ begin
         s_valid        => s_valid,
         s_i            => s_i,
         s_q            => s_q,
+        min_cn0_dbhz_i => min_cn0_dbhz_i,
+        carrier_lock_th_i => carrier_lock_th_i,
+        max_lock_fail_i => max_lock_fail_i,
         track_state_o  => chan_state_r(i),
         code_lock_o    => chan_code_lock_r(i),
         carrier_lock_o => chan_carrier_lock_r(i),
@@ -116,6 +125,7 @@ begin
         prn_o          => chan_prn_r(i),
         dopp_o         => chan_dopp_r(i),
         code_o         => chan_code_r(i),
+        cn0_dbhz_o     => chan_cn0_dbhz_r(i),
         prompt_i_o     => chan_prompt_i_r(i),
         prompt_q_o     => chan_prompt_q_r(i)
       );

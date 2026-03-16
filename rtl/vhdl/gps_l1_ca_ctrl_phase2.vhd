@@ -54,7 +54,10 @@ entity gps_l1_ca_ctrl_phase2 is
     doppler_min_o      : out signed(15 downto 0);
     doppler_max_o      : out signed(15 downto 0);
     doppler_step_o     : out signed(15 downto 0);
-    detect_thresh_o    : out unsigned(31 downto 0)
+    detect_thresh_o    : out unsigned(31 downto 0);
+    min_cn0_dbhz_o     : out unsigned(7 downto 0);
+    carrier_lock_th_o  : out signed(15 downto 0);
+    max_lock_fail_o    : out unsigned(7 downto 0)
   );
 end entity;
 
@@ -81,6 +84,9 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
   signal doppler_max_r     : signed(15 downto 0) := to_signed(5000, 16);
   signal doppler_step_r    : signed(15 downto 0) := to_signed(500, 16);
   signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(10000, 32);
+  signal min_cn0_dbhz_r    : unsigned(7 downto 0) := to_unsigned(22, 8);
+  signal carrier_lock_th_r : signed(15 downto 0) := to_signed(19661, 16); -- ~0.60 in Q15
+  signal max_lock_fail_r   : unsigned(7 downto 0) := to_unsigned(50, 8);
 begin
   ctrl_wack <= ctrl_wack_r;
   ctrl_rack <= ctrl_rack_r;
@@ -102,6 +108,9 @@ begin
   doppler_max_o      <= doppler_max_r;
   doppler_step_o     <= doppler_step_r;
   detect_thresh_o    <= detect_thresh_r;
+  min_cn0_dbhz_o     <= min_cn0_dbhz_r;
+  carrier_lock_th_o  <= carrier_lock_th_r;
+  max_lock_fail_o    <= max_lock_fail_r;
 
   process (clk)
   begin
@@ -143,6 +152,12 @@ begin
               doppler_max_r <= signed(ctrl_wdata(15 downto 0));
             when 16#18# =>
               doppler_step_r <= signed(ctrl_wdata(15 downto 0));
+            when 16#1C# =>
+              min_cn0_dbhz_r <= unsigned(ctrl_wdata(7 downto 0));
+            when 16#20# =>
+              carrier_lock_th_r <= signed(ctrl_wdata(15 downto 0));
+            when 16#24# =>
+              max_lock_fail_r <= unsigned(ctrl_wdata(7 downto 0));
             when others =>
               null;
           end case;
@@ -181,6 +196,12 @@ begin
         rd(15 downto 0) := std_logic_vector(doppler_max_r);
       when 16#18# =>
         rd(15 downto 0) := std_logic_vector(doppler_step_r);
+      when 16#1C# =>
+        rd(7 downto 0) := std_logic_vector(min_cn0_dbhz_r);
+      when 16#20# =>
+        rd(15 downto 0) := std_logic_vector(carrier_lock_th_r);
+      when 16#24# =>
+        rd(7 downto 0) := std_logic_vector(max_lock_fail_r);
       when 16#40# =>
         rd(0) := acq_done_i;
         rd(1) := acq_success_i;

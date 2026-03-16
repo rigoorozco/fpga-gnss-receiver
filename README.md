@@ -39,7 +39,11 @@ docs/
 make lint-vhdl
 make sim-smoke
 make sim-regress
+make phase3-eval
+make phase3-gate
 make synth-check
+make schematic
+make schematic-local
 make waves
 ```
 

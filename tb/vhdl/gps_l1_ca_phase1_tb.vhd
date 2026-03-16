@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.gps_l1_ca_log_pkg.all;
 
 entity gps_l1_ca_phase1_tb is
   generic (
@@ -9,7 +10,8 @@ entity gps_l1_ca_phase1_tb is
     G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 400000000;
-    G_REQUIRE_LOCK        : boolean := false
+    G_REQUIRE_LOCK        : boolean := false;
+    G_FAST_MODE           : boolean := false
   );
 end entity;
 
@@ -140,10 +142,17 @@ begin
     ctrl_write(16#24#, x"00000001"); -- init PRN
     ctrl_write(16#28#, x"00000000"); -- init Doppler
 
-    -- core_en=1, acq_start=1, tracking_en=1, uart_en=1
-    ctrl_write(16#00#, x"0000001D");
-    -- keep run bits without start pulse
-    ctrl_write(16#00#, x"00000019");
+    if G_FAST_MODE then
+      -- core_en=1, acq_start=1, tracking_en=1, uart_en=0
+      ctrl_write(16#00#, x"0000000D");
+      -- keep run bits without start pulse
+      ctrl_write(16#00#, x"00000009");
+    else
+      -- core_en=1, acq_start=1, tracking_en=1, uart_en=1
+      ctrl_write(16#00#, x"0000001D");
+      -- keep run bits without start pulse
+      ctrl_write(16#00#, x"00000019");
+    end if;
 
     if G_USE_FILE_INPUT then
       assert G_FILE_SAMPLE_RATE_SPS mod G_DUT_SAMPLE_RATE_SPS = 0
@@ -156,10 +165,10 @@ begin
         report "Unable to open input file: " & G_INPUT_FILE
         severity failure;
 
-      report "Replaying My First Fix input file: " & G_INPUT_FILE;
-      report "Input Fs=" & integer'image(G_FILE_SAMPLE_RATE_SPS) &
-             " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS) &
-             ", decimation=" & integer'image(decim);
+      log_msg("Replaying My First Fix input file: " & G_INPUT_FILE);
+      log_msg("Input Fs=" & integer'image(G_FILE_SAMPLE_RATE_SPS) &
+              " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS) &
+              ", decimation=" & integer'image(decim));
 
       while not endfile(iq_file) loop
         if G_MAX_FILE_SAMPLES > 0 and out_samp_cnt >= G_MAX_FILE_SAMPLES then
@@ -183,8 +192,8 @@ begin
       end loop;
 
       file_close(iq_file);
-      report "File replay completed. input_samples=" & integer'image(in_file_cnt) &
-             ", injected_samples=" & integer'image(out_samp_cnt);
+      log_msg("File replay completed. input_samples=" & integer'image(in_file_cnt) &
+              ", injected_samples=" & integer'image(out_samp_cnt));
     else
       while sample_cnt < 4800 loop
         drive_sample(
@@ -196,31 +205,33 @@ begin
     end if;
 
     -- Poll status for lock to emulate "first-fix" style progression checks.
-    for i in 0 to 199 loop
-      wait for 1 ms;
-      ctrl_read(16#40#, status_reg);
-      if status_reg(1) = '1' then
-        report "Acquisition success observed.";
-      end if;
-      if status_reg(2) = '1' and status_reg(3) = '1' then
-        lock_seen := true;
-        report "Tracking lock observed.";
-        exit;
-      end if;
-    end loop;
+    if G_REQUIRE_LOCK or (not G_FAST_MODE) then
+      for i in 0 to 199 loop
+        wait for 1 ms;
+        ctrl_read(16#40#, status_reg);
+        if status_reg(1) = '1' then
+          log_msg("Acquisition success observed.");
+        end if;
+        if status_reg(2) = '1' and status_reg(3) = '1' then
+          lock_seen := true;
+          log_msg("Tracking lock observed.");
+          exit;
+        end if;
+      end loop;
+    end if;
 
     if G_REQUIRE_LOCK then
       assert lock_seen
         report "Lock not observed before timeout."
         severity failure;
     else
-      if not lock_seen then
-        report "Lock not observed before timeout." severity warning;
+      if (not lock_seen) and (not G_FAST_MODE) then
+        log_msg(LOG_WARN, "Lock not observed before timeout.");
       end if;
     end if;
 
     wait for 1 ms;
-    assert false report "gps_l1_ca_phase1_tb completed" severity note;
+    log_msg("gps_l1_ca_phase1_tb completed");
     wait;
   end process;
 end architecture;

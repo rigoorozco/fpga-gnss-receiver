@@ -55,6 +55,9 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal doppler_max      : signed(15 downto 0);
   signal doppler_step     : signed(15 downto 0);
   signal detect_thresh    : unsigned(31 downto 0);
+  signal min_cn0_dbhz     : unsigned(7 downto 0);
+  signal carrier_lock_th  : signed(15 downto 0);
+  signal max_lock_fail    : unsigned(7 downto 0);
 
   signal acq_start_pulse  : std_logic;
   signal acq_prn_start    : unsigned(5 downto 0);
@@ -81,6 +84,7 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal chan_prn         : u6_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_dopp        : s16_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_code        : u11_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal chan_cn0_dbhz    : u8_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_prompt_i    : s24_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_prompt_q    : s24_arr_t(0 to G_NUM_CHANNELS - 1);
   signal chan_nav_valid   : std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
@@ -126,8 +130,10 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal chan_evt_prn     : unsigned(5 downto 0) := (others => '0');
   signal chan_evt_dopp    : signed(15 downto 0) := (others => '0');
   signal chan_evt_code    : unsigned(10 downto 0) := (others => '0');
+  signal chan_evt_cn0_dbhz: unsigned(7 downto 0) := (others => '0');
   signal chan_evt_nav_v   : std_logic := '0';
   signal chan_evt_nav_b   : std_logic := '0';
+  signal chan_evt_rr_start: integer range 0 to G_NUM_CHANNELS - 1 := 0;
 
   signal rep_tx_valid     : std_logic;
   signal rep_tx_data      : std_logic_vector(7 downto 0);
@@ -198,7 +204,10 @@ begin
       doppler_min_o     => doppler_min,
       doppler_max_o     => doppler_max,
       doppler_step_o    => doppler_step,
-      detect_thresh_o   => detect_thresh
+      detect_thresh_o   => detect_thresh,
+      min_cn0_dbhz_o    => min_cn0_dbhz,
+      carrier_lock_th_o => carrier_lock_th,
+      max_lock_fail_o   => max_lock_fail
     );
 
   acq_sched_u : entity work.gps_l1_ca_acq_sched
@@ -214,11 +223,14 @@ begin
       prn_stop_cfg      => prn_stop_cfg,
       chan_enable_mask  => chan_enable_mask,
       chan_alloc_i      => chan_alloc,
+      chan_lock_i       => chan_code_lock,
+      chan_carrier_lock_i => chan_carrier_lock,
       acq_done_i        => acq_done,
       acq_success_i     => acq_success,
       acq_result_prn_i  => acq_prn,
       acq_result_dopp_i => acq_dopp,
       acq_result_code_i => acq_code,
+      acq_result_metric_i => acq_metric,
       acq_start_pulse_o => acq_start_pulse,
       acq_prn_start_o   => acq_prn_start,
       acq_prn_stop_o    => acq_prn_stop,
@@ -266,6 +278,9 @@ begin
       s_valid            => in_tvalid,
       s_i                => in_i,
       s_q                => in_q,
+      min_cn0_dbhz_i     => min_cn0_dbhz,
+      carrier_lock_th_i  => carrier_lock_th,
+      max_lock_fail_i    => max_lock_fail,
       assign_valid_i     => assign_valid,
       assign_ch_idx_i    => assign_ch_idx,
       assign_prn_i       => assign_prn,
@@ -279,6 +294,7 @@ begin
       chan_prn_o         => chan_prn,
       chan_dopp_o        => chan_dopp,
       chan_code_o        => chan_code,
+      chan_cn0_dbhz_o    => chan_cn0_dbhz,
       chan_prompt_i_o    => chan_prompt_i,
       chan_prompt_q_o    => chan_prompt_q,
       chan_nav_valid_o   => chan_nav_valid,
@@ -326,6 +342,10 @@ begin
       sat_y_ecef_i      => sat_y_ecef_prn,
       sat_z_ecef_i      => sat_z_ecef_prn,
       sat_clk_corr_m_i  => sat_clk_corr_prn,
+      rx_est_valid_i    => pvt_valid,
+      rx_est_lat_e7_i   => pvt_lat_e7,
+      rx_est_lon_e7_i   => pvt_lon_e7,
+      rx_est_height_mm_i=> pvt_height_mm,
       obs_valid_o       => obs_valid,
       obs_epoch_o       => obs_epoch,
       obs_count_o       => obs_count,
@@ -381,6 +401,7 @@ begin
       chan_prn_i          => chan_evt_prn,
       chan_dopp_i         => chan_evt_dopp,
       chan_code_i         => chan_evt_code,
+      chan_cn0_dbhz_i     => chan_evt_cn0_dbhz,
       chan_nav_valid_i    => chan_evt_nav_v,
       chan_nav_bit_i      => chan_evt_nav_b,
       obs_event_valid_i   => obs_valid,
@@ -436,7 +457,9 @@ begin
   end process;
 
   event_pick_proc : process (clk)
-    variable found_v : boolean;
+    variable found_v  : boolean;
+    variable idx_v    : integer;
+    variable pick_idx : integer;
   begin
     if rising_edge(clk) then
       if rst_n = '0' then
@@ -448,26 +471,44 @@ begin
         chan_evt_prn   <= (others => '0');
         chan_evt_dopp  <= (others => '0');
         chan_evt_code  <= (others => '0');
+        chan_evt_cn0_dbhz <= (others => '0');
         chan_evt_nav_v <= '0';
         chan_evt_nav_b <= '0';
+        chan_evt_rr_start <= 0;
       else
         found_v := false;
+        pick_idx := chan_evt_rr_start;
         chan_evt_valid <= '0';
-        for i in 0 to G_NUM_CHANNELS - 1 loop
-          if chan_report_valid(i) = '1' and not found_v then
+        for off in 0 to G_NUM_CHANNELS - 1 loop
+          idx_v := chan_evt_rr_start + off;
+          if idx_v >= G_NUM_CHANNELS then
+            idx_v := idx_v - G_NUM_CHANNELS;
+          end if;
+
+          if chan_report_valid(idx_v) = '1' and not found_v then
             found_v := true;
+            pick_idx := idx_v;
             chan_evt_valid <= '1';
-            chan_evt_idx   <= to_unsigned(i, chan_evt_idx'length);
-            chan_evt_state <= chan_state(i);
-            chan_evt_code_l<= chan_code_lock(i);
-            chan_evt_car_l <= chan_carrier_lock(i);
-            chan_evt_prn   <= chan_prn(i);
-            chan_evt_dopp  <= chan_dopp(i);
-            chan_evt_code  <= chan_code(i);
-            chan_evt_nav_v <= chan_nav_valid(i);
-            chan_evt_nav_b <= chan_nav_bit(i);
+            chan_evt_idx   <= to_unsigned(idx_v, chan_evt_idx'length);
+            chan_evt_state <= chan_state(idx_v);
+            chan_evt_code_l<= chan_code_lock(idx_v);
+            chan_evt_car_l <= chan_carrier_lock(idx_v);
+            chan_evt_prn   <= chan_prn(idx_v);
+            chan_evt_dopp  <= chan_dopp(idx_v);
+            chan_evt_code  <= chan_code(idx_v);
+            chan_evt_cn0_dbhz <= chan_cn0_dbhz(idx_v);
+            chan_evt_nav_v <= chan_nav_valid(idx_v);
+            chan_evt_nav_b <= chan_nav_bit(idx_v);
           end if;
         end loop;
+
+        if found_v then
+          if pick_idx = G_NUM_CHANNELS - 1 then
+            chan_evt_rr_start <= 0;
+          else
+            chan_evt_rr_start <= pick_idx + 1;
+          end if;
+        end if;
       end if;
     end if;
   end process;

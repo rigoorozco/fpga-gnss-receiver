@@ -22,6 +22,9 @@ All addresses are byte addresses on the assumed simple control bus.
 - `0x10` Doppler min (signed 16)
 - `0x14` Doppler max (signed 16)
 - `0x18` Doppler step (signed 16)
+- `0x1C` minimum C/N0 threshold (unsigned 8, dB-Hz)
+- `0x20` carrier lock threshold (signed 16, Q15 `cos(2*phase_err)` metric)
+- `0x24` maximum consecutive lock-fail epochs before lock drop (unsigned 8)
 
 ## Status
 - `0x40` global status

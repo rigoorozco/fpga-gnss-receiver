@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.gps_l1_ca_pkg.all;
+use work.gps_l1_ca_log_pkg.all;
 
 entity gps_l1_ca_report_phase2 is
   port (
@@ -18,6 +19,7 @@ entity gps_l1_ca_report_phase2 is
     chan_prn_i         : in  unsigned(5 downto 0);
     chan_dopp_i        : in  signed(15 downto 0);
     chan_code_i        : in  unsigned(10 downto 0);
+    chan_cn0_dbhz_i    : in  unsigned(7 downto 0);
     chan_nav_valid_i   : in  std_logic;
     chan_nav_bit_i     : in  std_logic;
 
@@ -195,13 +197,13 @@ begin
             pkt_v(22) := std_logic_vector(pvt_cbias_i(15 downto 8));
 
             -- pragma translate_off
-            report "Position at receiver_t=" & format_runtime_from_samples(sample_counter_i) &
-                   ", obs_epoch=" & integer'image(to_integer(obs_epoch_i)) &
-                   " using " & integer'image(to_integer(pvt_sats_used_i)) &
-                   " observations is Lat = " & format_deg_e7(pvt_lat_e7_i) &
-                   " [deg], Long = " & format_deg_e7(pvt_lon_e7_i) &
-                   " [deg], Height = " & format_height_m(pvt_height_mm_i) &
-                   " [m], cbias=" & integer'image(to_integer(pvt_cbias_i));
+            log_msg("Position at receiver_t=" & format_runtime_from_samples(sample_counter_i) &
+                    ", obs_epoch=" & integer'image(to_integer(obs_epoch_i)) &
+                    " using " & integer'image(to_integer(pvt_sats_used_i)) &
+                    " observations is Lat = " & format_deg_e7(pvt_lat_e7_i) &
+                    " [deg], Long = " & format_deg_e7(pvt_lon_e7_i) &
+                    " [deg], Height = " & format_height_m(pvt_height_mm_i) &
+                    " [m], cbias=" & integer'image(to_integer(pvt_cbias_i)));
             -- pragma translate_on
           elsif obs_event_valid_i = '1' then
             pkt_type_v := x"20";
@@ -217,13 +219,13 @@ begin
             pkt_v(16) := std_logic_vector(obs_first_range_i(7 downto 0));
 
             -- pragma translate_off
-            report "UART observables report (pre-encoding): receiver_t=" &
-                   format_runtime_from_samples(sample_counter_i) &
-                   " epoch=" &
-                   integer'image(to_integer(obs_epoch_i)) &
-                   " count=" & integer'image(to_integer(obs_count_i)) &
-                   " first_prn=" & integer'image(to_integer(obs_first_prn_i)) &
-                   " first_range=" & integer'image(to_integer(obs_first_range_i));
+            log_msg("UART observables report (pre-encoding): receiver_t=" &
+                    format_runtime_from_samples(sample_counter_i) &
+                    " epoch=" &
+                    integer'image(to_integer(obs_epoch_i)) &
+                    " count=" & integer'image(to_integer(obs_count_i)) &
+                    " first_prn=" & integer'image(to_integer(obs_first_prn_i)) &
+                    " first_range=" & integer'image(to_integer(obs_first_range_i)));
             -- pragma translate_on
           else
             pkt_type_v := x"10";
@@ -243,14 +245,15 @@ begin
             pkt_v(13) := std_logic_vector(chan_code_i(7 downto 0));
 
             -- pragma translate_off
-            report "UART channel report (pre-encoding): ch=" &
-                   integer'image(to_integer(chan_idx_i)) &
-                   " prn=" & integer'image(to_integer(chan_prn_i)) &
-                   " state=" & integer'image(to_integer(unsigned(state_to_slv(chan_state_i)))) &
-                   " code_lock=" & std_logic'image(chan_code_lock_i) &
-                   " carrier_lock=" & std_logic'image(chan_carrier_lock_i) &
-                   " doppler=" & integer'image(to_integer(chan_dopp_i)) &
-                   " code_phase=" & integer'image(to_integer(chan_code_i));
+            log_msg("UART channel report (pre-encoding): ch=" &
+                    integer'image(to_integer(chan_idx_i)) &
+                    " prn=" & integer'image(to_integer(chan_prn_i)) &
+                    " state=" & integer'image(to_integer(unsigned(state_to_slv(chan_state_i)))) &
+                    " code_lock=" & std_logic'image(chan_code_lock_i) &
+                    " carrier_lock=" & std_logic'image(chan_carrier_lock_i) &
+                    " cn0_dbhz=" & integer'image(to_integer(chan_cn0_dbhz_i)) &
+                    " doppler=" & integer'image(to_integer(chan_dopp_i)) &
+                    " code_phase=" & integer'image(to_integer(chan_code_i)));
             -- pragma translate_on
           end if;
 
@@ -272,7 +275,7 @@ begin
 
           -- pragma translate_off
           if C_LOG_UART_BYTES then
-            report "UART PH2 byte[" & integer'image(pkt_index_r) & "] sent";
+            log_msg("UART PH2 byte[" & integer'image(pkt_index_r) & "] sent");
           end if;
           -- pragma translate_on
 

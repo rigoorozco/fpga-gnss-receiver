@@ -5,6 +5,7 @@
 /sim/*.fst
 /sim/*.ghw
 /sim/*.vcd
+/sim/*.log
 
 # GNSS sample data (downloaded/extracted for file-driven simulation)
 /2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.tar.gz
