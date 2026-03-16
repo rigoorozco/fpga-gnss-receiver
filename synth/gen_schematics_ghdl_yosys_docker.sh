@@ -18,6 +18,7 @@ echo "    note: run 'newgrp docker' first if needed for permissions"
 
 docker_cmd=(
   docker run --rm -it
+  --network host
   -v "${REPO_ROOT}:/work"
   -w /work
 )
@@ -30,6 +31,7 @@ done
 
 docker_cmd+=(
   "${DOCKER_IMAGE}"
+  --skip
   bash -lc "./synth/gen_schematics_ghdl_yosys.sh"
 )
 
