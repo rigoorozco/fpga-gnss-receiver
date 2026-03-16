@@ -6,7 +6,7 @@ GNSS_DATA_DIR := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN
 GNSS_DATA_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat
 GNSS_DATA_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_FILE)
 
-.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-acq-file sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
+.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-acq-file sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
 help:
 	@echo "Targets:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make lint-vhdl    - Run VHDL checks with NVC"
 	@echo "  make sim-smoke    - Run smoke simulations"
 	@echo "  make sim-unit     - Run unit-level VHDL testbenches"
+	@echo "  make sim-chan-bank - Run gps_l1_ca_chan_bank_tb"
 	@echo "  make sim-acq-file - Run gps_l1_ca_acq_tb with GNSS stimulus file replay"
 	@echo "  make sim-regress  - Run regression suite"
 	@echo "  make phase3-eval  - Run smoke + Phase 3 metric report (non-gating)"
@@ -51,6 +52,20 @@ sim-smoke:
 sim-unit:
 	@./sim/run_unit_tbs.sh
 
+sim-chan-bank:
+	@./lint/lint_vhdl.sh
+	@mkdir -p "$$(dirname "$${CHAN_BANK_WAVE_FILE:-sim/gps_l1_ca_chan_bank_tb.fst}")"
+	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -e \
+		-gG_USE_FILE_INPUT="$${CHAN_BANK_USE_FILE_INPUT:-true}" \
+		-gG_INPUT_FILE="$${CHAN_BANK_INPUT_FILE:-2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat}" \
+		-gG_FILE_SAMPLE_RATE_SPS="$${CHAN_BANK_FILE_SAMPLE_RATE_SPS:-4000000}" \
+		-gG_DUT_SAMPLE_RATE_SPS="$${CHAN_BANK_DUT_SAMPLE_RATE_SPS:-2000000}" \
+		-gG_MAX_FILE_SAMPLES="$${CHAN_BANK_MAX_FILE_SAMPLES:-3000000}" \
+		gps_l1_ca_chan_bank_tb
+	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -r gps_l1_ca_chan_bank_tb \
+		--stop-time="$${CHAN_BANK_TB_STOP_TIME:-80ms}" \
+		--wave="$${CHAN_BANK_WAVE_FILE:-sim/gps_l1_ca_chan_bank_tb.fst}"
+
 sim-acq-file:
 	@./sim/run_acq_file_tb.sh
 
@@ -75,3 +90,4 @@ schematic-local:
 waves:
 	@echo "VHDL waveform: sim/gps_l1_ca_phase2_tb.fst"
 	@echo "VHDL waveform: sim/gps_l1_ca_acq_tb.fst"
+	@echo "VHDL waveform: sim/gps_l1_ca_chan_bank_tb.fst"
