@@ -54,7 +54,7 @@ architecture rtl of gps_l1_ca_track_chan is
   constant C_LOCK_SCORE_DEC_CODE: integer := 6;
   constant C_LOCK_SCORE_DEC_CARR: integer := 2;
   constant C_PLL_ERR_GAIN_MIN   : integer := 4;
-  constant C_CN0_M2_SCALE       : integer := 512;
+  constant C_CN0_AVG_DIV        : integer := 16;
   constant C_LOCK_SMOOTH_DIV    : integer := 8;
   constant C_CODE_FCW_STEP      : unsigned(31 downto 0) := x"00010000";
   constant C_CODE_FCW_DELTA_MAX : unsigned(31 downto 0) := x"00200000";
@@ -89,8 +89,8 @@ architecture rtl of gps_l1_ca_track_chan is
 
   signal ms_sample_cnt_r    : integer range 0 to C_SAMPLES_PER_MS - 1 := 0;
   signal lock_score_r       : integer range 0 to C_LOCK_SCORE_MAX := 0;
-  signal m2_avg_r           : integer := 0;
-  signal m4_avg_r           : integer := 0;
+  signal cn0_sig_avg_r      : integer := 1;
+  signal cn0_noise_avg_r    : integer := 1;
   signal nbd_avg_r          : integer := 0;
   signal nbp_avg_r          : integer := 1;
   signal carrier_lock_metric_r : signed(15 downto 0) := (others => '0');
@@ -165,34 +165,13 @@ architecture rtl of gps_l1_ca_track_chan is
     return to_unsigned(code_i, 11);
   end function;
 
-  function isqrt(x : integer) return integer is
-    variable n : integer := x;
-    variable r : integer := 0;
-    variable b : integer := 1073741824; -- 2^30, highest power-of-4 below signed 32-bit max.
-  begin
-    if n <= 0 then
-      return 0;
-    end if;
-
-    for i in 0 to 15 loop
-      if n >= r + b then
-        n := n - (r + b);
-        r := (r / 2) + b;
-      else
-        r := r / 2;
-      end if;
-      b := b / 4;
-    end loop;
-    return r;
-  end function;
-
   function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
   begin
     return to_signed(to_integer(dopp_hz) * C_CARR_FCW_PER_HZ, 32);
   end function;
 
-  function cn0_dbhz_from_ratio_x100(snr_ratio_x100 : integer) return integer is
-    variable ratio_i        : integer;
+  function ten_log10_db100(x : integer) return integer is
+    variable x_i            : integer;
     variable base_i         : integer;
     variable octave_i       : integer;
     variable frac_q10_i     : integer;
@@ -202,23 +181,22 @@ architecture rtl of gps_l1_ca_track_chan is
     variable y1_i           : integer;
     variable interp_i       : integer;
     variable log10_db100_i  : integer;
-    variable cn0_i          : integer;
   begin
-    if snr_ratio_x100 <= 0 then
+    if x <= 0 then
       return 0;
     end if;
 
-    ratio_i := snr_ratio_x100;
+    x_i := x;
     base_i := 1;
     octave_i := 0;
     for i in 0 to 30 loop
-      if base_i <= ratio_i / 2 then
+      if base_i <= x_i / 2 then
         base_i := base_i * 2;
         octave_i := octave_i + 1;
       end if;
     end loop;
 
-    frac_q10_i := ((ratio_i - base_i) * 1024) / base_i;
+    frac_q10_i := ((x_i - base_i) * 1024) / base_i;
     if frac_q10_i < 0 then
       frac_q10_i := 0;
     elsif frac_q10_i > 1023 then
@@ -238,8 +216,28 @@ architecture rtl of gps_l1_ca_track_chan is
     interp_i := y0_i + (((y1_i - y0_i) * seg_frac_i + 32) / 64);
 
     log10_db100_i := (octave_i * 301) + interp_i;
-    -- C/N0[dB-Hz] = 10*log10(SNR) - 10*log10(Tint), Tint=1 ms => +30 dB.
-    cn0_i := (log10_db100_i + 3050) / 100;
+    return log10_db100_i;
+  end function;
+
+  function cn0_dbhz_from_powers(sig_pow : integer; noise_pow : integer) return integer is
+    variable sig_i      : integer;
+    variable noise_i    : integer;
+    variable cn0_db100_i: integer;
+    variable cn0_i      : integer;
+  begin
+    if sig_pow <= 0 then
+      return 0;
+    end if;
+
+    sig_i := sig_pow;
+    noise_i := noise_pow;
+    if noise_i < 1 then
+      noise_i := 1;
+    end if;
+
+    -- C/N0[dB-Hz] = 10*log10(C/N) + 30 for 1 ms coherent integration.
+    cn0_db100_i := ten_log10_db100(sig_i) - ten_log10_db100(noise_i) + 3000;
+    cn0_i := (cn0_db100_i + 50) / 100;
     if cn0_i < 0 then
       return 0;
     elsif cn0_i > 99 then
@@ -332,16 +330,19 @@ begin
     variable dopp_i             : integer;
     variable prompt_i_s         : integer;
     variable prompt_q_s         : integer;
+    variable early_i_s          : integer;
+    variable early_q_s          : integer;
+    variable late_i_s           : integer;
+    variable late_q_s           : integer;
     variable sig_pow_i          : integer;
-    variable m2_sample_i        : integer;
-    variable m4_sample_i        : integer;
-    variable m2_avg_i           : integer;
-    variable m4_avg_i           : integer;
-    variable cn0_term_i         : integer;
-    variable cn0_sqrt_i         : integer;
+    variable early_pow_i        : integer;
+    variable late_pow_i         : integer;
+    variable cn0_sig_sample_i   : integer;
+    variable cn0_noise_sample_i : integer;
+    variable cn0_sig_avg_i      : integer;
+    variable cn0_noise_avg_i    : integer;
     variable snr_num_i          : integer;
     variable snr_den_i          : integer;
-    variable snr_ratio_i        : integer;
     variable nbd_sample_i       : integer;
     variable nbp_sample_i       : integer;
     variable nbd_avg_i          : integer;
@@ -356,7 +357,6 @@ begin
     variable carrier_gain_i     : integer;
     variable cn0_inst_i         : integer;
     variable cn0_i              : integer;
-    variable cn0_valid_v        : boolean;
   begin
     if rising_edge(clk) then
       if rst_n = '0' then
@@ -380,8 +380,8 @@ begin
         prev_prompt_valid_r <= '0';
         ms_sample_cnt_r     <= 0;
         lock_score_r        <= 0;
-        m2_avg_r            <= 0;
-        m4_avg_r            <= 0;
+        cn0_sig_avg_r       <= 1;
+        cn0_noise_avg_r     <= 1;
         nbd_avg_r           <= 0;
         nbp_avg_r           <= 1;
         carrier_lock_metric_r <= (others => '0');
@@ -407,8 +407,8 @@ begin
           cn0_dbhz_r          <= (others => '0');
           ms_sample_cnt_r     <= 0;
           lock_score_r        <= 0;
-          m2_avg_r            <= 0;
-          m4_avg_r            <= 0;
+          cn0_sig_avg_r       <= 1;
+          cn0_noise_avg_r     <= 1;
           nbd_avg_r           <= 0;
           nbp_avg_r           <= 1;
           carrier_lock_metric_r <= (others => '0');
@@ -434,8 +434,8 @@ begin
             cn0_dbhz_r          <= (others => '0');
             ms_sample_cnt_r     <= 0;
             lock_score_r        <= 0;
-            m2_avg_r            <= 0;
-            m4_avg_r            <= 0;
+            cn0_sig_avg_r       <= 1;
+            cn0_noise_avg_r     <= 1;
             nbd_avg_r           <= 0;
             nbp_avg_r           <= 1;
             carrier_lock_metric_r <= (others => '0');
@@ -465,8 +465,8 @@ begin
                 early_q_acc_r       <= (others => '0');
                 late_i_acc_r        <= (others => '0');
                 late_q_acc_r        <= (others => '0');
-                m2_avg_r            <= 0;
-                m4_avg_r            <= 0;
+                cn0_sig_avg_r       <= 1;
+                cn0_noise_avg_r     <= 1;
                 nbd_avg_r           <= 0;
                 nbp_avg_r           <= 1;
                 carrier_lock_metric_r <= (others => '0');
@@ -551,55 +551,40 @@ begin
                   late_mag_i   := to_integer(abs_s32(next_late_i) + abs_s32(next_late_q));
                   dll_err_i    := early_mag_i - late_mag_i;
 
-                  -- Moment-based C/N0 estimator (M2/M4) with light smoothing.
+                  -- FPGA-friendly C/N0 estimator from prompt vs early/late power.
                   prompt_i_s := to_integer(shift_right(next_prompt_i, 12));
                   prompt_q_s := to_integer(shift_right(next_prompt_q, 12));
+                  early_i_s := to_integer(shift_right(next_early_i, 12));
+                  early_q_s := to_integer(shift_right(next_early_q, 12));
+                  late_i_s := to_integer(shift_right(next_late_i, 12));
+                  late_q_s := to_integer(shift_right(next_late_q, 12));
                   sig_pow_i := prompt_i_s * prompt_i_s + prompt_q_s * prompt_q_s;
-
-                  m2_sample_i := sig_pow_i / C_CN0_M2_SCALE;
-                  if m2_sample_i < 1 then
-                    m2_sample_i := 1;
+                  early_pow_i := early_i_s * early_i_s + early_q_s * early_q_s;
+                  late_pow_i := late_i_s * late_i_s + late_q_s * late_q_s;
+                  cn0_noise_sample_i := (early_pow_i + late_pow_i) / 2;
+                  if cn0_noise_sample_i < 1 then
+                    cn0_noise_sample_i := 1;
                   end if;
-                  m4_sample_i := m2_sample_i * m2_sample_i;
-
-                  m2_avg_i := m2_avg_r + (m2_sample_i - m2_avg_r) / C_LOCK_SMOOTH_DIV;
-                  m4_avg_i := m4_avg_r + (m4_sample_i - m4_avg_r) / C_LOCK_SMOOTH_DIV;
-                  if m2_avg_i < 1 then
-                    m2_avg_i := 1;
-                  end if;
-                  if m4_avg_i < 1 then
-                    m4_avg_i := 1;
-                  end if;
-                  m2_avg_r <= m2_avg_i;
-                  m4_avg_r <= m4_avg_i;
-
-                  cn0_term_i := (2 * m2_avg_i * m2_avg_i) - m4_avg_i;
-                  if cn0_term_i < 0 then
-                    cn0_term_i := 0;
-                  end if;
-                  cn0_sqrt_i := isqrt(cn0_term_i);
-                  snr_num_i := cn0_sqrt_i;
-                  snr_den_i := m2_avg_i - cn0_sqrt_i;
-                  cn0_i := to_integer(cn0_dbhz_r);
-                  cn0_valid_v := true;
-                  if cn0_sqrt_i = 0 then
-                    cn0_inst_i := 0;
-                  else
-                    -- Keep estimator responsive without forcing hard saturation.
-                    if snr_den_i <= 0 then
-                      snr_den_i := 1;
-                    end if;
-                    snr_ratio_i := (snr_num_i * 100) / snr_den_i;
-                    if snr_ratio_i < 1 then
-                      cn0_inst_i := 0;
-                    else
-                      cn0_inst_i := cn0_dbhz_from_ratio_x100(snr_ratio_i);
-                    end if;
+                  cn0_sig_sample_i := sig_pow_i - cn0_noise_sample_i;
+                  if cn0_sig_sample_i < 1 then
+                    cn0_sig_sample_i := 1;
                   end if;
 
-                  if cn0_valid_v then
-                    cn0_i := to_integer(cn0_dbhz_r) + (cn0_inst_i - to_integer(cn0_dbhz_r)) / C_LOCK_SMOOTH_DIV;
+                  cn0_sig_avg_i := cn0_sig_avg_r + (cn0_sig_sample_i - cn0_sig_avg_r) / C_CN0_AVG_DIV;
+                  cn0_noise_avg_i := cn0_noise_avg_r + (cn0_noise_sample_i - cn0_noise_avg_r) / C_CN0_AVG_DIV;
+                  if cn0_sig_avg_i < 1 then
+                    cn0_sig_avg_i := 1;
                   end if;
+                  if cn0_noise_avg_i < 1 then
+                    cn0_noise_avg_i := 1;
+                  end if;
+                  cn0_sig_avg_r <= cn0_sig_avg_i;
+                  cn0_noise_avg_r <= cn0_noise_avg_i;
+
+                  snr_num_i := cn0_sig_avg_i;
+                  snr_den_i := cn0_noise_avg_i;
+                  cn0_inst_i := cn0_dbhz_from_powers(snr_num_i, snr_den_i);
+                  cn0_i := cn0_inst_i;
                   if cn0_i < 0 then
                     cn0_i := 0;
                   elsif cn0_i > 99 then
