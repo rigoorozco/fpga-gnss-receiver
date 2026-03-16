@@ -10,7 +10,8 @@ entity gps_l1_ca_acq_tb is
     G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat";
     G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
-    G_MAX_FILE_SAMPLES    : integer := 3000000
+    G_MAX_FILE_SAMPLES    : integer := 3000000;
+    G_DUT_ACQ_IMPL_FFT    : boolean := false
   );
 end entity;
 
@@ -48,7 +49,8 @@ begin
 
   dut : entity work.gps_l1_ca_acq
     generic map (
-      G_DWELL_MS => 1
+      G_DWELL_MS     => 1,
+      G_ACQ_IMPL_FFT => G_DUT_ACQ_IMPL_FFT
     )
     port map (
       clk           => clk,

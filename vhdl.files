@@ -9,6 +9,8 @@ rtl/vhdl/axis_skid_buffer.vhd
 rtl/vhdl/xilinx_inferred_true_dual_port_ram.vhd
 rtl/vhdl/axis_sample_ingress.vhd
 rtl/vhdl/gps_l1_ca_ctrl.vhd
+rtl/vhdl/gps_l1_ca_acq_td.vhd
+rtl/vhdl/gps_l1_ca_acq_fft.vhd
 rtl/vhdl/gps_l1_ca_acq.vhd
 rtl/vhdl/gps_l1_ca_track_chan.vhd
 rtl/vhdl/gps_l1_ca_nav.vhd
