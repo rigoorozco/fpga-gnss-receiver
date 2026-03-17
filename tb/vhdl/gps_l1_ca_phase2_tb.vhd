@@ -160,8 +160,8 @@ begin
     -- acq windowing: 17 Doppler bins, 64 code bins, code-step 16 (match acq_tb full-space runs).
     ctrl_write(16#3C#, x"00104011");
     ctrl_write(16#1C#, x"00000014"); -- min C/N0 threshold 20 dB-Hz
-    ctrl_write(16#20#, x"00006000"); -- carrier lock threshold Q15 (0.75)
-    ctrl_write(16#24#, x"00000064"); -- max_lock_fail = 100 epochs
+    ctrl_write(16#20#, x"00002000"); -- carrier lock threshold Q15 (0.25)
+    ctrl_write(16#24#, x"00000028"); -- max_lock_fail = 40 epochs
 
     if G_FAST_MODE then
       -- core_en + rescan + tracking only (disable uart/nav/obs/pvt for speed).

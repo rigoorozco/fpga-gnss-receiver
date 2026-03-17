@@ -63,6 +63,7 @@ architecture rtl of gps_l1_ca_track_chan is
   constant C_CODE_LOOP_KI_DIV    : integer := 128;
   constant C_PLL_LOOP_KI_DIV     : integer := 256;
   constant C_FLL_LOOP_STEP_SCALE : integer := 4;
+  constant C_PULLIN_PLL_ASSIST_DIV : integer := 4;
   constant C_PHASE_ERR_MAX_Q15   : integer := 24576;
   constant C_CARR_FCW_DELTA_MAX  : integer := 64000000;
   constant C_PLL_GAIN_MIN_Q8_8   : integer := 64;  -- 0.25 Hz
@@ -378,6 +379,7 @@ begin
     variable carr_kp_i          : integer;
     variable carr_ki_i          : integer;
     variable fll_step_i         : integer;
+    variable pll_assist_step_i  : integer;
     variable fll_gain_i         : integer;
     variable pll_bw_sel_i       : integer;
     variable dll_bw_sel_i       : integer;
@@ -403,6 +405,7 @@ begin
     variable nbd_avg_i          : integer;
     variable nbp_avg_i          : integer;
     variable carrier_metric_i   : integer;
+    variable carrier_metric_eval_i : integer;
     variable carrier_enter_th_i : integer;
     variable carrier_track_th_i : integer;
     variable max_lock_fail_v    : integer;
@@ -791,7 +794,13 @@ begin
                       carr_fcw_max_step_i := 1;
                     end if;
                     fll_step_i := clamp_i(fll_step_i, -carr_fcw_max_step_i, carr_fcw_max_step_i);
-                    carr_fcw_i := to_integer(carr_loop_i_r) + fll_step_i;
+                    -- Add a limited PLL assist term so pull-in can also unwind static
+                    -- phase offset from acquisition, not just frequency error.
+                    pll_assist_step_i := (carrier_err_pll_q15_i * carr_kp_i) / 32768;
+                    pll_assist_step_i := pll_assist_step_i / C_PULLIN_PLL_ASSIST_DIV;
+                    pll_assist_step_i := clamp_i(pll_assist_step_i, -carr_fcw_max_step_i, carr_fcw_max_step_i);
+
+                    carr_fcw_i := to_integer(carr_loop_i_r) + fll_step_i + pll_assist_step_i;
                     carr_fcw_i := clamp_i(carr_fcw_i, -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
                     carr_loop_i_r <= to_signed(carr_fcw_i, 32);
                     carr_fcw_cmd_r <= to_signed(carr_fcw_i, 32);
@@ -812,9 +821,18 @@ begin
                     carrier_track_th_i := -32768;
                   end if;
 
-                  carrier_enter_v := (carrier_metric_i >= carrier_enter_th_i) and
+                  -- In pull-in, FLL corrects frequency but not absolute phase, so
+                  -- accept either Costas lobe and let PLL settle the phase sign after
+                  -- we enter TRACK_LOCKED.
+                  if state_r = TRACK_PULLIN then
+                    carrier_metric_eval_i := abs_i(carrier_metric_i);
+                  else
+                    carrier_metric_eval_i := carrier_metric_i;
+                  end if;
+
+                  carrier_enter_v := (carrier_metric_eval_i >= carrier_enter_th_i) and
                                      (abs_i(carrier_err_i) < C_CARR_ERR_LOCK_MAX);
-                  carrier_track_v := (carrier_metric_i >= carrier_track_th_i) and
+                  carrier_track_v := (carrier_metric_eval_i >= carrier_track_th_i) and
                                      (abs_i(carrier_err_i) < C_CARR_ERR_TRACK_MAX);
                   max_lock_fail_v := to_integer(max_lock_fail_i);
                   if max_lock_fail_v < 4 then
