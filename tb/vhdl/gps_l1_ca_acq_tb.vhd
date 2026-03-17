@@ -11,7 +11,7 @@ entity gps_l1_ca_acq_tb is
     G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 3000000;
-    G_DUT_ACQ_IMPL_FFT    : boolean := true
+    G_DUT_ACQ_IMPL_FFT    : boolean := false
   );
 end entity;
 

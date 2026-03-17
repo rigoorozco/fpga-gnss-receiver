@@ -12,7 +12,7 @@ entity gps_l1_ca_phase1_tb is
     G_MAX_FILE_SAMPLES    : integer := 400000000;
     G_REQUIRE_LOCK        : boolean := false;
     G_FAST_MODE           : boolean := false;
-    G_DUT_ACQ_IMPL_FFT    : boolean := true
+    G_DUT_ACQ_IMPL_FFT    : boolean := false
   );
 end entity;
 

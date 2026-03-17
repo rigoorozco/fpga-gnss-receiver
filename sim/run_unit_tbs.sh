@@ -14,7 +14,7 @@ UNIT_TB_STOP_TIME="${UNIT_TB_STOP_TIME:-3ms}"
 NVC_STDERR_LEVEL="${NVC_STDERR_LEVEL:-none}"
 UNIT_RUN_LINT="${UNIT_RUN_LINT:-1}"
 UNIT_ACQ_WAVE_FILE="${UNIT_ACQ_WAVE_FILE:-sim/gps_l1_ca_acq_tb.fst}"
-UNIT_ACQ_IMPL_FFT="${UNIT_ACQ_IMPL_FFT:-true}"
+UNIT_ACQ_IMPL_FFT="${UNIT_ACQ_IMPL_FFT:-false}"
 
 if ! command -v nvc >/dev/null 2>&1; then
   echo "error: nvc not found. Cannot run unit TBs."

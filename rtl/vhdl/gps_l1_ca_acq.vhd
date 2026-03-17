@@ -5,7 +5,7 @@ use ieee.numeric_std.all;
 entity gps_l1_ca_acq is
   generic (
     G_DWELL_MS     : integer := 2;
-    G_ACQ_IMPL_FFT : boolean := true
+    G_ACQ_IMPL_FFT : boolean := false
   );
   port (
     clk                  : in  std_logic;

@@ -13,7 +13,7 @@ entity gps_l1_ca_phase2_tb is
     G_REQUIRE_PVT         : boolean := false;
     G_FAST_MODE           : boolean := false;
     G_ENABLE_WAVE_DUMP    : boolean := true;
-    G_DUT_ACQ_IMPL_FFT    : boolean := true
+    G_DUT_ACQ_IMPL_FFT    : boolean := false
   );
 end entity;
 

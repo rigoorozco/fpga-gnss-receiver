@@ -10,7 +10,7 @@ entity gps_l1_ca_phase2_top is
     G_NUM_CHANNELS : integer := 5;
     CLK_HZ         : integer := 50000000;
     UART_BAUD      : integer := 115200;
-    G_ACQ_IMPL_FFT : boolean := true
+    G_ACQ_IMPL_FFT : boolean := false
   );
   port (
     clk         : in  std_logic;
