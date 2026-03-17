@@ -438,6 +438,9 @@ begin
     );
 
   report_u : entity work.gps_l1_ca_report_phase2
+    generic map (
+      G_NUM_CHANNELS => G_NUM_CHANNELS
+    )
     port map (
       clk                 => clk,
       rst_n               => rst_n and not soft_reset_req,
@@ -454,6 +457,16 @@ begin
       chan_cn0_dbhz_i     => chan_evt_cn0_dbhz,
       chan_nav_valid_i    => chan_evt_nav_v,
       chan_nav_bit_i      => chan_evt_nav_b,
+      all_chan_alloc_i    => chan_alloc,
+      all_chan_state_i    => chan_state,
+      all_chan_code_lock_i => chan_code_lock,
+      all_chan_carrier_lock_i => chan_carrier_lock,
+      all_chan_prn_i      => chan_prn,
+      all_chan_dopp_i     => chan_dopp,
+      all_chan_code_i     => chan_code,
+      all_chan_cn0_dbhz_i => chan_cn0_dbhz,
+      all_chan_nav_valid_i => chan_nav_valid,
+      all_chan_nav_bit_i  => chan_nav_bit,
       obs_event_valid_i   => obs_valid,
       obs_epoch_i         => obs_epoch,
       obs_count_i         => obs_count,

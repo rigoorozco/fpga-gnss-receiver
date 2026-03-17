@@ -5,6 +5,9 @@ use work.gps_l1_ca_pkg.all;
 use work.gps_l1_ca_log_pkg.all;
 
 entity gps_l1_ca_report_phase2 is
+  generic (
+    G_NUM_CHANNELS : integer := C_PHASE2_PREF_CHANNELS
+  );
   port (
     clk                : in  std_logic;
     rst_n              : in  std_logic;
@@ -22,6 +25,16 @@ entity gps_l1_ca_report_phase2 is
     chan_cn0_dbhz_i    : in  unsigned(7 downto 0);
     chan_nav_valid_i   : in  std_logic;
     chan_nav_bit_i     : in  std_logic;
+    all_chan_alloc_i   : in  std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
+    all_chan_state_i   : in  track_state_arr_t(0 to G_NUM_CHANNELS - 1);
+    all_chan_code_lock_i : in std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
+    all_chan_carrier_lock_i : in std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
+    all_chan_prn_i     : in  u6_arr_t(0 to G_NUM_CHANNELS - 1);
+    all_chan_dopp_i    : in  s16_arr_t(0 to G_NUM_CHANNELS - 1);
+    all_chan_code_i    : in  u11_arr_t(0 to G_NUM_CHANNELS - 1);
+    all_chan_cn0_dbhz_i: in  u8_arr_t(0 to G_NUM_CHANNELS - 1);
+    all_chan_nav_valid_i : in std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
+    all_chan_nav_bit_i : in  std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
 
     obs_event_valid_i  : in  std_logic;
     obs_epoch_i        : in  unsigned(31 downto 0);
@@ -143,6 +156,50 @@ architecture rtl of gps_l1_ca_report_phase2 is
     end if;
     return trim_image(sec_v) & "." & zpad(usec_v, 6) & " s";
   end function;
+
+  function lpad(x : integer; width : positive) return string is
+    constant src : string := trim_image(x);
+    variable out_s : string(1 to width) := (others => ' ');
+    variable j : integer := src'right;
+  begin
+    for i in width downto 1 loop
+      exit when j < src'left;
+      out_s(i) := src(j);
+      j := j - 1;
+    end loop;
+    return out_s;
+  end function;
+
+  function rpad(s : string; width : positive) return string is
+    variable out_s : string(1 to width) := (others => ' ');
+    variable src_i : integer := s'left;
+  begin
+    for i in 1 to width loop
+      exit when src_i > s'right;
+      out_s(i) := s(src_i);
+      src_i := src_i + 1;
+    end loop;
+    return out_s;
+  end function;
+
+  function bit_to_str(b : std_logic) return string is
+  begin
+    if b = '0' then
+      return "0";
+    elsif b = '1' then
+      return "1";
+    end if;
+    return "?";
+  end function;
+
+  function state_to_text(s : track_state_t) return string is
+  begin
+    case s is
+      when TRACK_IDLE   => return "IDLE";
+      when TRACK_PULLIN => return "PULLIN";
+      when TRACK_LOCKED => return "LOCKED";
+    end case;
+  end function;
   -- pragma translate_on
 begin
   tx_valid_o <= tx_valid_r;
@@ -245,15 +302,25 @@ begin
             pkt_v(13) := std_logic_vector(chan_code_i(7 downto 0));
 
             -- pragma translate_off
-            log_msg("UART channel report (pre-encoding): ch=" &
-                    integer'image(to_integer(chan_idx_i)) &
-                    " prn=" & integer'image(to_integer(chan_prn_i)) &
-                    " state=" & integer'image(to_integer(unsigned(state_to_slv(chan_state_i)))) &
-                    " code_lock=" & std_logic'image(chan_code_lock_i) &
-                    " carrier_lock=" & std_logic'image(chan_carrier_lock_i) &
-                    " cn0_dbhz=" & integer'image(to_integer(chan_cn0_dbhz_i)) &
-                    " doppler=" & integer'image(to_integer(chan_dopp_i)) &
-                    " code_phase=" & integer'image(to_integer(chan_code_i)));
+            log_msg("Tracking channels table at receiver_t=" &
+                    format_runtime_from_samples(sample_counter_i) &
+                    " (event_ch=" & integer'image(to_integer(chan_idx_i)) & ")");
+            log_msg(" idx | alloc | prn | state  | c_lock | car_lock | nav_v | nav_b | cn0 | doppler | code");
+            log_msg("-----+-------+-----+--------+--------+----------+-------+-------+-----+---------+------");
+            for ch in 0 to G_NUM_CHANNELS - 1 loop
+              log_msg(" " &
+                      lpad(ch, 3) & " | " &
+                      rpad(bit_to_str(all_chan_alloc_i(ch)), 5) & " | " &
+                      lpad(to_integer(all_chan_prn_i(ch)), 3) & " | " &
+                      rpad(state_to_text(all_chan_state_i(ch)), 6) & " | " &
+                      rpad(bit_to_str(all_chan_code_lock_i(ch)), 6) & " | " &
+                      rpad(bit_to_str(all_chan_carrier_lock_i(ch)), 8) & " | " &
+                      rpad(bit_to_str(all_chan_nav_valid_i(ch)), 5) & " | " &
+                      rpad(bit_to_str(all_chan_nav_bit_i(ch)), 5) & " | " &
+                      lpad(to_integer(all_chan_cn0_dbhz_i(ch)), 3) & " | " &
+                      lpad(to_integer(all_chan_dopp_i(ch)), 7) & " | " &
+                      lpad(to_integer(all_chan_code_i(ch)), 4));
+            end loop;
             -- pragma translate_on
           end if;
 
