@@ -30,6 +30,7 @@ tb/vhdl/gps_l1_ca_phase2_tb.vhd
 tb/vhdl/gps_l1_ca_acq_sched_tb.vhd
 tb/vhdl/gps_l1_ca_acq_tb.vhd
 tb/vhdl/gps_l1_ca_chan_bank_tb.vhd
+tb/vhdl/gps_l1_ca_chan_bank_nav_store_tb.vhd
 tb/vhdl/gps_l1_ca_nav_store_tb.vhd
 tb/vhdl/gps_l1_ca_observables_tb.vhd
 tb/vhdl/gps_l1_ca_pvt_tb.vhd

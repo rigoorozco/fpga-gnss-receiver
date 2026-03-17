@@ -6,7 +6,7 @@ GNSS_DATA_DIR := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN
 GNSS_DATA_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat
 GNSS_DATA_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_FILE)
 
-.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-acq-file sim-acq-equiv sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
+.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-chan-bank-nav-store sim-acq-file sim-acq-equiv sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
 help:
 	@echo "Targets:"
@@ -16,6 +16,7 @@ help:
 	@echo "                     Set NVC_ENABLE_WAVE=0 to disable wave dump"
 	@echo "  make sim-unit     - Run unit-level VHDL testbenches"
 	@echo "  make sim-chan-bank - Run gps_l1_ca_chan_bank_tb"
+	@echo "  make sim-chan-bank-nav-store - Run gps_l1_ca_chan_bank_nav_store_tb"
 	@echo "  make sim-acq-file - Run gps_l1_ca_acq_tb with GNSS stimulus file replay"
 	@echo "  make sim-acq-equiv - Run gps_l1_ca_acq_tb in TD and FFT modes and compare tuples"
 	@echo "  make sim-regress  - Run regression suite"
@@ -69,6 +70,20 @@ sim-chan-bank:
 		--stop-time="$${CHAN_BANK_TB_STOP_TIME:-80ms}" \
 		--wave="$${CHAN_BANK_WAVE_FILE:-sim/gps_l1_ca_chan_bank_tb.fst}"
 
+sim-chan-bank-nav-store:
+	@./lint/lint_vhdl.sh
+	@mkdir -p "$$(dirname "$${CHAN_BANK_NAV_STORE_WAVE_FILE:-sim/gps_l1_ca_chan_bank_nav_store_tb.fst}")"
+	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -e \
+		-gG_RUN_MS="$${CHAN_BANK_NAV_STORE_RUN_MS:-40}" \
+		-gG_USE_FILE_INPUT="$${CHAN_BANK_NAV_STORE_USE_FILE_INPUT:-true}" \
+		-gG_INPUT_FILE="$${CHAN_BANK_NAV_STORE_INPUT_FILE:-2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat}" \
+		-gG_FILE_SAMPLE_RATE_SPS="$${CHAN_BANK_NAV_STORE_FILE_SAMPLE_RATE_SPS:-4000000}" \
+		-gG_DUT_SAMPLE_RATE_SPS="$${CHAN_BANK_NAV_STORE_DUT_SAMPLE_RATE_SPS:-2000000}" \
+		gps_l1_ca_chan_bank_nav_store_tb
+	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -r gps_l1_ca_chan_bank_nav_store_tb \
+		--stop-time="$${CHAN_BANK_NAV_STORE_TB_STOP_TIME:-80ms}" \
+		--wave="$${CHAN_BANK_NAV_STORE_WAVE_FILE:-sim/gps_l1_ca_chan_bank_nav_store_tb.fst}"
+
 sim-acq-file:
 	@./sim/run_acq_file_tb.sh
 
@@ -97,3 +112,4 @@ waves:
 	@echo "VHDL waveform: sim/gps_l1_ca_phase2_tb.fst"
 	@echo "VHDL waveform: sim/gps_l1_ca_acq_tb.fst"
 	@echo "VHDL waveform: sim/gps_l1_ca_chan_bank_tb.fst"
+	@echo "VHDL waveform: sim/gps_l1_ca_chan_bank_nav_store_tb.fst"

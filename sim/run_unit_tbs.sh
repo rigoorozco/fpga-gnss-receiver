@@ -5,6 +5,7 @@ UNIT_TBS=(
   gps_l1_ca_acq_sched_tb
   gps_l1_ca_acq_tb
   gps_l1_ca_chan_bank_tb
+  gps_l1_ca_chan_bank_nav_store_tb
   gps_l1_ca_nav_store_tb
   gps_l1_ca_observables_tb
   gps_l1_ca_pvt_tb
