@@ -9,8 +9,8 @@ use work.gps_l1_ca_log_pkg.all;
 entity gps_l1_ca_chan_bank_tb is
   generic (
     G_USE_FILE_INPUT      : boolean := false;
-    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat";
-    G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
+    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat";
+    G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 3000000
   );
@@ -364,7 +364,6 @@ begin
       variable b3_v           : character;
       variable in_file_cnt_v  : integer := 0;
       variable out_samp_cnt_v : integer := 0;
-      variable decim_v        : integer := 1;
       variable lock_hold_samp_v : integer := 0;
       variable lock_hold_done_v : boolean := false;
       variable hold_target_samples_v : integer := C_SAMPLES_PER_MS;
@@ -413,7 +412,6 @@ begin
         severity failure;
 
       if G_USE_FILE_INPUT then
-        decim_v := G_FILE_SAMPLE_RATE_SPS / G_DUT_SAMPLE_RATE_SPS;
         in_file_cnt_v := 0;
         out_samp_cnt_v := 0;
         file_open(read_status_v, iq_file, G_INPUT_FILE, read_mode);
@@ -436,20 +434,18 @@ begin
           if endfile(iq_file) then exit; end if;
           read(iq_file, b3_v);
 
-          if (in_file_cnt_v mod decim_v) = 0 then
-            drive_file_sample(s16_from_le(b0_v, b1_v), s16_from_le(b2_v, b3_v));
-            out_samp_cnt_v := out_samp_cnt_v + 1;
-            if chan_code_lock_o(ch_idx_v) = '1' and
-               chan_carrier_lock_o(ch_idx_v) = '1' and
-               chan_state_o(ch_idx_v) = TRACK_LOCKED then
-              lock_seen_v := true;
-              lock_hold_samp_v := lock_hold_samp_v + 1;
-              if lock_hold_samp_v >= hold_target_samples_v then
-                lock_hold_done_v := true;
-              end if;
-            else
-              lock_hold_samp_v := 0;
+          drive_file_sample(s16_from_le(b0_v, b1_v), s16_from_le(b2_v, b3_v));
+          out_samp_cnt_v := out_samp_cnt_v + 1;
+          if chan_code_lock_o(ch_idx_v) = '1' and
+             chan_carrier_lock_o(ch_idx_v) = '1' and
+             chan_state_o(ch_idx_v) = TRACK_LOCKED then
+            lock_seen_v := true;
+            lock_hold_samp_v := lock_hold_samp_v + 1;
+            if lock_hold_samp_v >= hold_target_samples_v then
+              lock_hold_done_v := true;
             end if;
+          else
+            lock_hold_samp_v := 0;
           end if;
           in_file_cnt_v := in_file_cnt_v + 1;
         end loop;
@@ -524,8 +520,8 @@ begin
     core_en <= '1';
     tracking_en <= '1';
     if G_USE_FILE_INPUT then
-      assert G_FILE_SAMPLE_RATE_SPS mod G_DUT_SAMPLE_RATE_SPS = 0
-        report "File sample rate must be integer multiple of DUT sample rate."
+      assert G_FILE_SAMPLE_RATE_SPS = G_DUT_SAMPLE_RATE_SPS
+        report "File sample rate must equal DUT sample rate. Pre-decimate input file before replay."
         severity failure;
     end if;
     min_cn0_dbhz_i <= to_unsigned(0, min_cn0_dbhz_i'length);

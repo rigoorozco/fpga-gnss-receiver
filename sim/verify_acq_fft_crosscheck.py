@@ -165,9 +165,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--input-file",
-        default="2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat",
+        default="2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat",
     )
-    p.add_argument("--file-sample-rate", type=int, default=4_000_000)
+    p.add_argument("--file-sample-rate", type=int, default=2_000_000)
     p.add_argument("--dut-sample-rate", type=int, default=2_000_000)
     p.add_argument("--samples-per-ms", type=int, default=ref.C_SAMPLES_PER_MS)
 

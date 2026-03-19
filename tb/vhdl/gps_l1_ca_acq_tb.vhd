@@ -7,8 +7,8 @@ use work.gps_l1_ca_log_pkg.all;
 entity gps_l1_ca_acq_tb is
   generic (
     G_USE_FILE_INPUT      : boolean := false;
-    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat";
-    G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
+    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat";
+    G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 3000000;
     G_DUT_ACQ_IMPL_FFT    : boolean := false
@@ -138,7 +138,6 @@ begin
       variable b3_v          : character;
       variable in_file_cnt_v : integer := 0;
       variable out_samp_cnt_v: integer := 0;
-      variable decim_v       : integer := 1;
     begin
       detect_thresh <= thresh_v;
       prn_start <= to_unsigned(prn_v, prn_start'length);
@@ -146,7 +145,6 @@ begin
       pulse_start;
 
       if G_USE_FILE_INPUT then
-        decim_v := G_FILE_SAMPLE_RATE_SPS / G_DUT_SAMPLE_RATE_SPS;
         file_open(read_status_v, iq_file, G_INPUT_FILE, read_mode);
         assert read_status_v = open_ok
           report "Unable to open input file: " & G_INPUT_FILE
@@ -167,12 +165,10 @@ begin
           if endfile(iq_file) then exit; end if;
           read(iq_file, b3_v);
 
-          if (in_file_cnt_v mod decim_v) = 0 then
-            drive_file_sample(s16_from_le(b0_v, b1_v), s16_from_le(b2_v, b3_v));
-            out_samp_cnt_v := out_samp_cnt_v + 1;
-            if acq_done = '1' then
-              seen_done_v := true;
-            end if;
+          drive_file_sample(s16_from_le(b0_v, b1_v), s16_from_le(b2_v, b3_v));
+          out_samp_cnt_v := out_samp_cnt_v + 1;
+          if acq_done = '1' then
+            seen_done_v := true;
           end if;
           in_file_cnt_v := in_file_cnt_v + 1;
         end loop;
@@ -241,7 +237,6 @@ begin
     variable b3          : character;
     variable in_file_cnt : integer := 0;
     variable out_samp_cnt: integer := 0;
-    variable decim       : integer := 1;
     variable run1_metric_v      : unsigned(31 downto 0) := (others => '0');
     variable realistic_thresh_v : unsigned(31 downto 0) := (others => '0');
     variable fullspace_thresh_v : unsigned(31 downto 0) := (others => '0');
@@ -260,10 +255,9 @@ begin
     rst_n <= '1';
     core_en <= '1';
     if G_USE_FILE_INPUT then
-      assert G_FILE_SAMPLE_RATE_SPS mod G_DUT_SAMPLE_RATE_SPS = 0
-        report "File sample rate must be integer multiple of DUT sample rate."
+      assert G_FILE_SAMPLE_RATE_SPS = G_DUT_SAMPLE_RATE_SPS
+        report "File sample rate must equal DUT sample rate. Pre-decimate input file before replay."
         severity failure;
-      decim := G_FILE_SAMPLE_RATE_SPS / G_DUT_SAMPLE_RATE_SPS;
       s_valid <= '0';
     else
       s_valid <= '1';
@@ -286,8 +280,7 @@ begin
 
       log_msg("gps_l1_ca_acq_tb replay input: " & G_INPUT_FILE);
       log_msg("Input Fs=" & integer'image(G_FILE_SAMPLE_RATE_SPS) &
-              " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS) &
-              ", decimation=" & integer'image(decim));
+              " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS));
 
       while not endfile(iq_file) loop
         exit when seen_done;
@@ -304,12 +297,10 @@ begin
         if endfile(iq_file) then exit; end if;
         read(iq_file, b3);
 
-        if (in_file_cnt mod decim) = 0 then
-          drive_file_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
-          out_samp_cnt := out_samp_cnt + 1;
-          if acq_done = '1' then
-            seen_done := true;
-          end if;
+        drive_file_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
+        out_samp_cnt := out_samp_cnt + 1;
+        if acq_done = '1' then
+          seen_done := true;
         end if;
         in_file_cnt := in_file_cnt + 1;
       end loop;
@@ -376,12 +367,10 @@ begin
         if endfile(iq_file) then exit; end if;
         read(iq_file, b3);
 
-        if (in_file_cnt mod decim) = 0 then
-          drive_file_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
-          out_samp_cnt := out_samp_cnt + 1;
-          if acq_done = '1' then
-            seen_done := true;
-          end if;
+        drive_file_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
+        out_samp_cnt := out_samp_cnt + 1;
+        if acq_done = '1' then
+          seen_done := true;
         end if;
         in_file_cnt := in_file_cnt + 1;
       end loop;
@@ -446,12 +435,10 @@ begin
         if endfile(iq_file) then exit; end if;
         read(iq_file, b3);
 
-        if (in_file_cnt mod decim) = 0 then
-          drive_file_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
-          out_samp_cnt := out_samp_cnt + 1;
-          if acq_done = '1' then
-            seen_done := true;
-          end if;
+        drive_file_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
+        out_samp_cnt := out_samp_cnt + 1;
+        if acq_done = '1' then
+          seen_done := true;
         end if;
         in_file_cnt := in_file_cnt + 1;
       end loop;

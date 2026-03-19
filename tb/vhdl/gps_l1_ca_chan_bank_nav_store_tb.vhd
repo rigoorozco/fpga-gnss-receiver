@@ -10,8 +10,8 @@ entity gps_l1_ca_chan_bank_nav_store_tb is
   generic (
     G_RUN_MS              : integer := 40;
     G_USE_FILE_INPUT      : boolean := true;
-    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat";
-    G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
+    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat";
+    G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000
   );
 end entity;
@@ -383,7 +383,6 @@ begin
     variable b3_v            : character;
     variable in_file_cnt_v   : integer := 0;
     variable out_samp_cnt_v  : integer := 0;
-    variable decim_v         : integer := 1;
     variable run_samples_v   : integer := 0;
   begin
     for ch in 0 to C_NUM_CH - 1 loop
@@ -416,10 +415,9 @@ begin
     assert run_samples_v > 0 report "G_RUN_MS must be positive." severity failure;
 
     if G_USE_FILE_INPUT then
-      assert G_FILE_SAMPLE_RATE_SPS mod G_DUT_SAMPLE_RATE_SPS = 0
-        report "File sample rate must be integer multiple of DUT sample rate."
+      assert G_FILE_SAMPLE_RATE_SPS = G_DUT_SAMPLE_RATE_SPS
+        report "File sample rate must equal DUT sample rate. Pre-decimate input file before replay."
         severity failure;
-      decim_v := G_FILE_SAMPLE_RATE_SPS / G_DUT_SAMPLE_RATE_SPS;
       file_open(read_status_v, iq_file, G_INPUT_FILE, read_mode);
       assert read_status_v = open_ok
         report "Unable to open input file: " & G_INPUT_FILE
@@ -437,25 +435,23 @@ begin
         if endfile(iq_file) then exit; end if;
         read(iq_file, b3_v);
 
-        if (in_file_cnt_v mod decim_v) = 0 then
-          drive_file_sample(s16_from_le(b0_v, b1_v), s16_from_le(b2_v, b3_v));
-          out_samp_cnt_v := out_samp_cnt_v + 1;
+        drive_file_sample(s16_from_le(b0_v, b1_v), s16_from_le(b2_v, b3_v));
+        out_samp_cnt_v := out_samp_cnt_v + 1;
 
-          all_locked_v := true;
-          for ch in 0 to C_NUM_CH - 1 loop
-            if chan_code_lock_o(ch) = '1' and chan_carrier_lock_o(ch) = '1' and chan_state_o(ch) = TRACK_LOCKED then
-              lock_seen_v(ch) := '1';
-            end if;
-            if not (chan_code_lock_o(ch) = '1' and chan_carrier_lock_o(ch) = '1' and chan_state_o(ch) = TRACK_LOCKED) then
-              all_locked_v := false;
-            end if;
-          end loop;
-
-          if all_locked_v then
-            lock_hold_samp_v := lock_hold_samp_v + 1;
-          else
-            lock_hold_samp_v := 0;
+        all_locked_v := true;
+        for ch in 0 to C_NUM_CH - 1 loop
+          if chan_code_lock_o(ch) = '1' and chan_carrier_lock_o(ch) = '1' and chan_state_o(ch) = TRACK_LOCKED then
+            lock_seen_v(ch) := '1';
           end if;
+          if not (chan_code_lock_o(ch) = '1' and chan_carrier_lock_o(ch) = '1' and chan_state_o(ch) = TRACK_LOCKED) then
+            all_locked_v := false;
+          end if;
+        end loop;
+
+        if all_locked_v then
+          lock_hold_samp_v := lock_hold_samp_v + 1;
+        else
+          lock_hold_samp_v := 0;
         end if;
         in_file_cnt_v := in_file_cnt_v + 1;
       end loop;

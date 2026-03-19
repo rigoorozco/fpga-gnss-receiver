@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Reference model for gps_l1_ca_acq_tb Run4 (PRN 1 full code-Doppler search).
 
-The script reads the same IQ stimulus file used by `gps_l1_ca_acq_tb`, applies the
-same decimation, and emulates the acquisition bin search for one PRN using the
-same key constants/updates as rtl/vhdl/gps_l1_ca_acq.vhd.
+The script reads the same IQ stimulus file used by `gps_l1_ca_acq_tb` and emulates
+the acquisition bin search for one PRN using the same key constants/updates as
+rtl/vhdl/gps_l1_ca_acq.vhd.
 
 It reports best {result_code, result_dopp, metric} and can optionally validate
 against expected values.
@@ -528,10 +528,10 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--input-file",
-        default="2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat",
+        default="2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat",
         help="Path to stimulus file (I16,Q16 little-endian interleaved)",
     )
-    p.add_argument("--file-sample-rate", type=int, default=4_000_000)
+    p.add_argument("--file-sample-rate", type=int, default=2_000_000)
     p.add_argument("--dut-sample-rate", type=int, default=2_000_000)
     p.add_argument(
         "--time-offset",

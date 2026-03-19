@@ -6,8 +6,8 @@ use work.gps_l1_ca_log_pkg.all;
 entity gps_l1_ca_phase2_tb is
   generic (
     G_USE_FILE_INPUT      : boolean := true;
-    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat";
-    G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
+    G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat";
+    G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 400000000;
     G_REQUIRE_PVT         : boolean := false;
@@ -129,7 +129,6 @@ begin
     variable b3             : character;
     variable in_file_cnt    : integer := 0;
     variable out_samp_cnt   : integer := 0;
-    variable decim          : integer := 1;
     variable sample_cnt     : integer := 0;
     variable status_reg     : std_logic_vector(31 downto 0) := (others => '0');
     variable alloc_reg      : std_logic_vector(31 downto 0) := (others => '0');
@@ -176,10 +175,9 @@ begin
     end if;
 
     if G_USE_FILE_INPUT then
-      assert G_FILE_SAMPLE_RATE_SPS mod G_DUT_SAMPLE_RATE_SPS = 0
-        report "File sample rate must be integer multiple of DUT sample rate."
+      assert G_FILE_SAMPLE_RATE_SPS = G_DUT_SAMPLE_RATE_SPS
+        report "File sample rate must equal DUT sample rate. Pre-decimate input file before replay."
         severity failure;
-      decim := G_FILE_SAMPLE_RATE_SPS / G_DUT_SAMPLE_RATE_SPS;
 
       file_open(read_status, iq_file, G_INPUT_FILE, read_mode);
       assert read_status = open_ok
@@ -188,8 +186,7 @@ begin
 
       log_msg("Phase 2 replay input: " & G_INPUT_FILE);
       log_msg("Input Fs=" & integer'image(G_FILE_SAMPLE_RATE_SPS) &
-              " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS) &
-              ", decimation=" & integer'image(decim));
+              " -> DUT Fs=" & integer'image(G_DUT_SAMPLE_RATE_SPS));
 
       while not endfile(iq_file) loop
         if G_MAX_FILE_SAMPLES > 0 and out_samp_cnt >= G_MAX_FILE_SAMPLES then
@@ -205,14 +202,12 @@ begin
         if endfile(iq_file) then exit; end if;
         read(iq_file, b3);
 
-        if (in_file_cnt mod decim) = 0 then
-          drive_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
-          out_samp_cnt := out_samp_cnt + 1;
-          if G_DUT_SAMPLE_RATE_SPS > 0 and (out_samp_cnt mod G_DUT_SAMPLE_RATE_SPS) = 0 then
-            log_msg("Receiver time: " &
-                    integer'image(out_samp_cnt / G_DUT_SAMPLE_RATE_SPS) &
-                    " s");
-          end if;
+        drive_sample(s16_from_le(b0, b1), s16_from_le(b2, b3));
+        out_samp_cnt := out_samp_cnt + 1;
+        if G_DUT_SAMPLE_RATE_SPS > 0 and (out_samp_cnt mod G_DUT_SAMPLE_RATE_SPS) = 0 then
+          log_msg("Receiver time: " &
+                  integer'image(out_samp_cnt / G_DUT_SAMPLE_RATE_SPS) &
+                  " s");
         end if;
         in_file_cnt := in_file_cnt + 1;
       end loop;

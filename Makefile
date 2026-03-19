@@ -5,6 +5,9 @@ GNSS_DATA_ARCHIVE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.tar.gz
 GNSS_DATA_DIR := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN
 GNSS_DATA_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat
 GNSS_DATA_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_FILE)
+GNSS_DATA_DECIMATED_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat
+GNSS_DATA_DECIMATED_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_DECIMATED_FILE)
+GNSS_TB_INPUT_FILE := $(GNSS_DATA_DECIMATED_SRC)
 
 .PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-chan-bank-nav-store sim-acq-file sim-acq-equiv sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
@@ -43,9 +46,18 @@ fetch-gnss-data: $(GNSS_DATA_ARCHIVE)
 	@echo "Extracting GNSS sample archive..."
 	@tar -xzf $(GNSS_DATA_ARCHIVE)
 	@test -f $(GNSS_DATA_SRC) || (echo "error: expected data file not found after extraction: $(GNSS_DATA_SRC)" && exit 1)
+	@if [ ! -f "$(GNSS_DATA_DECIMATED_SRC)" ] || [ "$(GNSS_DATA_SRC)" -nt "$(GNSS_DATA_DECIMATED_SRC)" ] || [ sim/decimate_iq_by2.py -nt "$(GNSS_DATA_DECIMATED_SRC)" ]; then \
+		echo "Generating decimated GNSS sample file..."; \
+		python3 sim/decimate_iq_by2.py "$(GNSS_DATA_SRC)" "$(GNSS_DATA_DECIMATED_SRC)"; \
+	else \
+		echo "Decimated GNSS sample file is up to date."; \
+	fi
 	@ln -sfn $(GNSS_DATA_SRC) $(GNSS_DATA_FILE)
+	@ln -sfn $(GNSS_DATA_DECIMATED_SRC) $(GNSS_DATA_DECIMATED_FILE)
 	@echo "Data ready at: $(GNSS_DATA_SRC)"
+	@echo "Decimated data ready at: $(GNSS_DATA_DECIMATED_SRC)"
 	@echo "Linked as: $(GNSS_DATA_FILE)"
+	@echo "Linked as: $(GNSS_DATA_DECIMATED_FILE)"
 
 lint-vhdl:
 	@./lint/lint_vhdl.sh
@@ -61,8 +73,8 @@ sim-chan-bank:
 	@mkdir -p "$$(dirname "$${CHAN_BANK_WAVE_FILE:-sim/gps_l1_ca_chan_bank_tb.fst}")"
 	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -e \
 		-gG_USE_FILE_INPUT="$${CHAN_BANK_USE_FILE_INPUT:-true}" \
-		-gG_INPUT_FILE="$${CHAN_BANK_INPUT_FILE:-2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat}" \
-		-gG_FILE_SAMPLE_RATE_SPS="$${CHAN_BANK_FILE_SAMPLE_RATE_SPS:-4000000}" \
+		-gG_INPUT_FILE="$${CHAN_BANK_INPUT_FILE:-$(GNSS_TB_INPUT_FILE)}" \
+		-gG_FILE_SAMPLE_RATE_SPS="$${CHAN_BANK_FILE_SAMPLE_RATE_SPS:-2000000}" \
 		-gG_DUT_SAMPLE_RATE_SPS="$${CHAN_BANK_DUT_SAMPLE_RATE_SPS:-2000000}" \
 		-gG_MAX_FILE_SAMPLES="$${CHAN_BANK_MAX_FILE_SAMPLES:-3000000}" \
 		gps_l1_ca_chan_bank_tb
@@ -76,8 +88,8 @@ sim-chan-bank-nav-store:
 	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -e \
 		-gG_RUN_MS="$${CHAN_BANK_NAV_STORE_RUN_MS:-40}" \
 		-gG_USE_FILE_INPUT="$${CHAN_BANK_NAV_STORE_USE_FILE_INPUT:-true}" \
-		-gG_INPUT_FILE="$${CHAN_BANK_NAV_STORE_INPUT_FILE:-2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat}" \
-		-gG_FILE_SAMPLE_RATE_SPS="$${CHAN_BANK_NAV_STORE_FILE_SAMPLE_RATE_SPS:-4000000}" \
+		-gG_INPUT_FILE="$${CHAN_BANK_NAV_STORE_INPUT_FILE:-$(GNSS_TB_INPUT_FILE)}" \
+		-gG_FILE_SAMPLE_RATE_SPS="$${CHAN_BANK_NAV_STORE_FILE_SAMPLE_RATE_SPS:-2000000}" \
 		-gG_DUT_SAMPLE_RATE_SPS="$${CHAN_BANK_NAV_STORE_DUT_SAMPLE_RATE_SPS:-2000000}" \
 		gps_l1_ca_chan_bank_nav_store_tb
 	@nvc --std=2008 --stderr="$${NVC_STDERR_LEVEL:-none}" -r gps_l1_ca_chan_bank_nav_store_tb \

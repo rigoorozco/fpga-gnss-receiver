@@ -52,7 +52,8 @@ make fetch-gnss-data
 This creates/updates:
 
 - `2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/`
-- `2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat` (symlink to the extracted `.dat`)
+- `2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat` (symlink to the extracted raw `.dat`, 4 MSPS)
+- `2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat` (symlink to pre-decimated replay `.dat`, 2 MSPS)
 
 ## Canonical Verification / Build Commands
 
