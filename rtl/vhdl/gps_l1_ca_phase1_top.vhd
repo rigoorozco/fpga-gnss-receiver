@@ -9,7 +9,13 @@ entity gps_l1_ca_phase1_top is
     DATAW    : integer := 32;
     CLK_HZ   : integer := 50000000;
     UART_BAUD: integer := 115200;
-    G_ACQ_IMPL_FFT : boolean := false
+    G_ACQ_IMPL_FFT : boolean := false;
+    G_GAIN_CTRL_EN : boolean := true;
+    G_GAIN_CTRL_BLOCK_SHIFT     : integer := 12;
+    G_GAIN_CTRL_TARGET_PWR      : integer := 1048576;
+    G_GAIN_CTRL_TARGET_HYST     : integer := 262144;
+    G_GAIN_CTRL_MAX_SHIFT       : integer := 6;
+    G_GAIN_CTRL_INIT_SHIFT      : integer := 0
   );
   port (
     clk         : in  std_logic;
@@ -37,6 +43,9 @@ architecture rtl of gps_l1_ca_phase1_top is
   signal in_tready      : std_logic := '1';
   signal in_i           : signed(15 downto 0);
   signal in_q           : signed(15 downto 0);
+  signal gc_tvalid      : std_logic;
+  signal gc_i           : signed(15 downto 0);
+  signal gc_q           : signed(15 downto 0);
   signal sample_counter : unsigned(31 downto 0);
 
   signal core_en        : std_logic;
@@ -108,6 +117,27 @@ begin
       sample_counter => sample_counter
     );
 
+  gain_ctrl_u : entity work.gps_l1_ca_gain_ctrl
+    generic map (
+      G_ENABLE          => G_GAIN_CTRL_EN,
+      G_BLOCK_SHIFT     => G_GAIN_CTRL_BLOCK_SHIFT,
+      G_TARGET_PWR      => G_GAIN_CTRL_TARGET_PWR,
+      G_TARGET_HYST     => G_GAIN_CTRL_TARGET_HYST,
+      G_MAX_GAIN_SHIFT  => G_GAIN_CTRL_MAX_SHIFT,
+      G_INIT_GAIN_SHIFT => G_GAIN_CTRL_INIT_SHIFT
+    )
+    port map (
+      clk     => clk,
+      rst_n   => rst_n and not soft_reset_req,
+      s_valid => in_tvalid,
+      s_i     => in_i,
+      s_q     => in_q,
+      m_valid => gc_tvalid,
+      m_i     => gc_i,
+      m_q     => gc_q,
+      gain_shift_o => open
+    );
+
   ctrl_u : entity work.gps_l1_ca_ctrl
     generic map (
       ADDRW => ADDRW,
@@ -174,9 +204,9 @@ begin
       doppler_bin_count_i => acq_dopp_bins,
       code_bin_count_i => acq_code_bins,
       code_bin_step_i => acq_code_step,
-      s_valid       => in_tvalid,
-      s_i           => in_i,
-      s_q           => in_q,
+      s_valid       => gc_tvalid,
+      s_i           => gc_i,
+      s_q           => gc_q,
       acq_done      => acq_done,
       acq_success   => acq_success,
       result_valid  => acq_valid,
@@ -198,9 +228,9 @@ begin
       acq_prn        => acq_prn,
       acq_dopp       => acq_dopp,
       acq_code       => acq_code,
-      s_valid        => in_tvalid,
-      s_i            => in_i,
-      s_q            => in_q,
+      s_valid        => gc_tvalid,
+      s_i            => gc_i,
+      s_q            => gc_q,
       min_cn0_dbhz_i => min_cn0_dbhz,
       carrier_lock_th_i => carrier_lock_th,
       max_lock_fail_i => max_lock_fail,

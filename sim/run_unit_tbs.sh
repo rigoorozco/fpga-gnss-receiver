@@ -2,6 +2,7 @@
 set -u -o pipefail
 
 UNIT_TBS=(
+  gps_l1_ca_gain_ctrl_tb
   gps_l1_ca_acq_sched_tb
   gps_l1_ca_acq_tb
   gps_l1_ca_chan_bank_tb

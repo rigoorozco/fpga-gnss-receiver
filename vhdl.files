@@ -8,6 +8,7 @@ rtl/vhdl/integrate_dump.vhd
 rtl/vhdl/axis_skid_buffer.vhd
 rtl/vhdl/xilinx_inferred_true_dual_port_ram.vhd
 rtl/vhdl/axis_sample_ingress.vhd
+rtl/vhdl/gps_l1_ca_gain_ctrl.vhd
 rtl/vhdl/gps_l1_ca_ctrl.vhd
 rtl/vhdl/gps_l1_ca_acq_td.vhd
 rtl/vhdl/gps_l1_ca_acq_fft.vhd
@@ -27,6 +28,7 @@ rtl/vhdl/gps_l1_ca_pvt.vhd
 rtl/vhdl/gps_l1_ca_report_phase2.vhd
 rtl/vhdl/gps_l1_ca_phase2_top.vhd
 tb/vhdl/gps_l1_ca_phase2_tb.vhd
+tb/vhdl/gps_l1_ca_gain_ctrl_tb.vhd
 tb/vhdl/gps_l1_ca_acq_sched_tb.vhd
 tb/vhdl/gps_l1_ca_acq_tb.vhd
 tb/vhdl/gps_l1_ca_chan_bank_tb.vhd
