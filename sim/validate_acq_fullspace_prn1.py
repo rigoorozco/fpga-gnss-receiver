@@ -30,10 +30,20 @@ C_DEF_DOPP_BINS = 9
 
 
 @dataclass
+class RankedBin:
+    code: int
+    dopp: int
+    metric: int
+    search_idx: int
+
+
+@dataclass
 class AcqSearchResult:
     best_code: int
     best_dopp: int
     best_metric: int
+    top_bins: List[RankedBin]
+    avg_metric: float
     code_axis: List[int]
     dopp_axis: List[int]
     metric_grid: List[List[int]]
@@ -163,35 +173,124 @@ def build_prn_sequence(prn: int) -> List[int]:
     return seq
 
 
+def build_anti_alias_fir(decim: int) -> List[float]:
+    if decim <= 1:
+        return [1.0]
+
+    # Use an odd-length Hamming-windowed sinc. Cutoff scales with decimation ratio.
+    num_taps = max(17, 16 * decim + 1)
+    if (num_taps % 2) == 0:
+        num_taps += 1
+    half = num_taps // 2
+    cutoff_cycles_per_sample = 0.45 / float(decim)
+
+    coeffs: List[float] = []
+    for n in range(num_taps):
+        x = n - half
+        if x == 0:
+            sinc = 2.0 * cutoff_cycles_per_sample
+        else:
+            sinc = math.sin(2.0 * math.pi * cutoff_cycles_per_sample * x) / (math.pi * x)
+        window = 0.54 - 0.46 * math.cos(2.0 * math.pi * n / float(num_taps - 1))
+        coeffs.append(sinc * window)
+
+    coeff_sum = sum(coeffs)
+    if coeff_sum == 0.0:
+        return [1.0]
+    return [c / coeff_sum for c in coeffs]
+
+
 def read_decimated_iq(
     path: Path,
     file_fs: int,
     dut_fs: int,
+    start_sample: int,
     samples_needed: int,
+    anti_alias: bool = True,
     require_full: bool = True,
 ) -> Tuple[List[int], List[int]]:
     if file_fs % dut_fs != 0:
         raise ValueError("file_fs must be an integer multiple of dut_fs")
+    if start_sample < 0:
+        raise ValueError("start_sample must be >= 0")
+    if samples_needed <= 0:
+        raise ValueError("samples_needed must be > 0")
     decim = file_fs // dut_fs
 
     out_i: List[int] = []
     out_q: List[int] = []
-    in_idx = 0
+    in_idx = start_sample * decim
+
+    if (not anti_alias) or decim <= 1:
+        with path.open("rb") as f:
+            f.seek(in_idx * 4)
+            while len(out_i) < samples_needed:
+                b = f.read(4)
+                if len(b) < 4:
+                    if not require_full:
+                        break
+                    raise RuntimeError(
+                        "EOF while reading stimulus. "
+                        f"Need {samples_needed} decimated samples from offset {start_sample}, got {len(out_i)}"
+                    )
+                i_s, q_s = struct.unpack("<hh", b)
+                if (in_idx % decim) == 0:
+                    out_i.append(i_s)
+                    out_q.append(q_s)
+                in_idx += 1
+
+        return out_i, out_q
+
+    total_samples = path.stat().st_size // 4
+    last_center = in_idx + (samples_needed - 1) * decim
+    if last_center >= total_samples:
+        if not require_full:
+            samples_needed = max(0, (total_samples - in_idx + decim - 1) // decim)
+            last_center = in_idx + (samples_needed - 1) * decim if samples_needed > 0 else in_idx
+        else:
+            got = max(0, (total_samples - in_idx + decim - 1) // decim)
+            raise RuntimeError(
+                "EOF while reading stimulus. "
+                f"Need {samples_needed} decimated samples from offset {start_sample}, got {got}"
+            )
+    if samples_needed == 0:
+        return out_i, out_q
+
+    fir = build_anti_alias_fir(decim)
+    half = len(fir) // 2
+
+    read_start = max(0, in_idx - half)
+    read_end = min(total_samples - 1, last_center + half)
+    read_count = read_end - read_start + 1
 
     with path.open("rb") as f:
-        while len(out_i) < samples_needed:
-            b = f.read(4)
-            if len(b) < 4:
-                if not require_full:
-                    break
-                raise RuntimeError(
-                    f"EOF while reading stimulus. Need {samples_needed} decimated samples, got {len(out_i)}"
-                )
-            i_s, q_s = struct.unpack("<hh", b)
-            if (in_idx % decim) == 0:
-                out_i.append(i_s)
-                out_q.append(q_s)
-            in_idx += 1
+        f.seek(read_start * 4)
+        raw = f.read(read_count * 4)
+    if len(raw) < read_count * 4:
+        if require_full:
+            raise RuntimeError("EOF while reading stimulus for anti-alias filtering")
+        read_count = len(raw) // 4
+        raw = raw[: read_count * 4]
+        read_end = read_start + read_count - 1
+
+    chunk_i: List[int] = []
+    chunk_q: List[int] = []
+    for i_s, q_s in struct.iter_unpack("<hh", raw):
+        chunk_i.append(i_s)
+        chunk_q.append(q_s)
+
+    for k in range(samples_needed):
+        center = in_idx + k * decim
+        acc_i = 0.0
+        acc_q = 0.0
+        for tap_idx, tap in enumerate(fir):
+            src_idx = center + tap_idx - half
+            if read_start <= src_idx <= read_end:
+                local = src_idx - read_start
+                acc_i += tap * chunk_i[local]
+                acc_q += tap * chunk_q[local]
+        out_i.append(clamp_s16(int(round(acc_i))))
+        out_q.append(clamp_s16(int(round(acc_q))))
 
     return out_i, out_q
 
@@ -293,11 +392,21 @@ def evaluate_bin(
 
 
 def run_reference(args: argparse.Namespace) -> AcqSearchResult:
+    if args.time_offset < 0.0:
+        raise ValueError("time_offset must be >= 0 ms")
+    if args.window_size <= 0:
+        raise ValueError("window_size must be > 0 samples")
+
+    # Convert ms offset to decimated-sample offset at DUT sample rate.
+    start_sample = int(math.floor((args.time_offset * args.dut_sample_rate / 1000.0) + 1e-12))
+
     cap_i, cap_q = read_decimated_iq(
         path=Path(args.input_file),
         file_fs=args.file_sample_rate,
         dut_fs=args.dut_sample_rate,
-        samples_needed=args.samples_per_ms,
+        start_sample=start_sample,
+        samples_needed=args.window_size,
+        anti_alias=args.anti_alias,
     )
 
     bins, code_bin_count_eff, dopp_bin_count_eff = build_search_bins(
@@ -314,21 +423,26 @@ def run_reference(args: argparse.Namespace) -> AcqSearchResult:
     cos_lut = [int(round(math.cos(2.0 * math.pi * k / 1024.0) * 32767.0)) for k in range(1024)]
     sin_lut = [int(round(math.sin(2.0 * math.pi * k / 1024.0) * 32767.0)) for k in range(1024)]
 
-    best_metric = 0
-    best_code, best_dopp = bins[0]
     all_metrics: List[int] = []
 
     for idx, (code_bin, dopp_bin) in enumerate(bins):
         metric = evaluate_bin(cap_i, cap_q, prn_seq, code_bin, dopp_bin, cos_lut, sin_lut)
         all_metrics.append(metric)
-        # Match RTL tie-breaker behavior: ">=" prefers the later bin on ties.
-        if metric >= best_metric:
-            best_metric = metric
-            best_code = code_bin
-            best_dopp = dopp_bin
 
         if args.progress and ((idx + 1) % 64 == 0 or (idx + 1) == len(bins)):
             print(f"processed {idx + 1}/{len(bins)} bins", file=sys.stderr)
+
+    ranked = sorted(
+        (
+            RankedBin(code=bins[idx][0], dopp=bins[idx][1], metric=metric, search_idx=idx)
+            for idx, metric in enumerate(all_metrics)
+        ),
+        key=lambda x: (x.metric, x.search_idx),
+        reverse=True,
+    )
+    top_bins = ranked[:3]
+    best = top_bins[0]
+    avg_metric = sum(all_metrics) / float(len(all_metrics))
 
     code_axis = [bins[c][0] for c in range(code_bin_count_eff)]
     dopp_axis = [bins[d * code_bin_count_eff][1] for d in range(dopp_bin_count_eff)]
@@ -338,9 +452,11 @@ def run_reference(args: argparse.Namespace) -> AcqSearchResult:
     ]
 
     return AcqSearchResult(
-        best_code=best_code,
-        best_dopp=best_dopp,
-        best_metric=best_metric,
+        best_code=best.code,
+        best_dopp=best.dopp,
+        best_metric=best.metric,
+        top_bins=top_bins,
+        avg_metric=avg_metric,
         code_axis=code_axis,
         dopp_axis=dopp_axis,
         metric_grid=metric_grid,
@@ -379,14 +495,21 @@ def plot_code_doppler_surface(
     fig = plt.figure(figsize=(11, 7))
     ax = fig.add_subplot(111, projection="3d")
     surface = ax.plot_surface(x_mesh, y_mesh, z_metric, cmap="viridis", linewidth=0, antialiased=True)
-    ax.scatter(
-        [result.best_code],
-        [result.best_dopp],
-        [result.best_metric],
-        color="red",
-        s=45,
-        label="Best Bin",
-    )
+    marker_cfg = [
+        ("Best Bin", "red", 45),
+        ("2nd Best", "orange", 40),
+        ("3rd Best", "gold", 35),
+    ]
+    for rank_idx, bin_rank in enumerate(result.top_bins):
+        label, color, size = marker_cfg[rank_idx]
+        ax.scatter(
+            [bin_rank.code],
+            [bin_rank.dopp],
+            [bin_rank.metric],
+            color=color,
+            s=size,
+            label=label,
+        )
     ax.set_title("Code-Doppler Search Space Metric")
     ax.set_xlabel("Code Bin (chips)")
     ax.set_ylabel("Doppler Bin (Hz)")
@@ -410,7 +533,32 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--file-sample-rate", type=int, default=4_000_000)
     p.add_argument("--dut-sample-rate", type=int, default=2_000_000)
-    p.add_argument("--samples-per-ms", type=int, default=C_SAMPLES_PER_MS)
+    p.add_argument(
+        "--time-offset",
+        type=float,
+        default=0.0,
+        help="Start of the acquisition window in ms from beginning of input file.",
+    )
+    p.add_argument(
+        "--window-size",
+        type=int,
+        default=C_SAMPLES_PER_MS,
+        help="Number of decimated input samples to use for acquisition.",
+    )
+    p.add_argument("--samples-per-ms", dest="window_size", type=int, help=argparse.SUPPRESS)
+    p.add_argument(
+        "--anti-alias",
+        dest="anti_alias",
+        action="store_true",
+        default=True,
+        help="Apply FIR anti-alias filtering before decimation (enabled by default).",
+    )
+    p.add_argument(
+        "--no-anti-alias",
+        dest="anti_alias",
+        action="store_false",
+        help="Disable anti-alias filtering and use sample-drop decimation.",
+    )
 
     p.add_argument("--prn", type=int, default=1)
     p.add_argument("--doppler-min", type=int, default=-2000)
@@ -441,11 +589,24 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    result = run_reference(args)
+    try:
+        result = run_reference(args)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     print(f"result_code={result.best_code}")
     print(f"result_dopp={result.best_dopp}")
     print(f"result_metric={result.best_metric}")
+    if len(result.top_bins) >= 2:
+        print(f"result2_code={result.top_bins[1].code}")
+        print(f"result2_dopp={result.top_bins[1].dopp}")
+        print(f"result2_metric={result.top_bins[1].metric}")
+    if len(result.top_bins) >= 3:
+        print(f"result3_code={result.top_bins[2].code}")
+        print(f"result3_dopp={result.top_bins[2].dopp}")
+        print(f"result3_metric={result.top_bins[2].metric}")
+    print(f"avg_metric_window={result.avg_metric:.3f}")
 
     failed = False
 
