@@ -18,6 +18,11 @@ rtl/vhdl/acquisition/gps_l1_ca_acq_fft_mix_fft.vhd
 rtl/vhdl/acquisition/gps_l1_ca_acq_fft_corr.vhd
 rtl/vhdl/gps_l1_ca_acq_fft.vhd
 rtl/vhdl/gps_l1_ca_acq.vhd
+rtl/vhdl/tracking/gps_l1_ca_track_pkg.vhd
+rtl/vhdl/tracking/gps_l1_ca_track_discriminators.vhd
+rtl/vhdl/tracking/gps_l1_ca_track_power_lock.vhd
+rtl/vhdl/tracking/gps_l1_ca_track_loop_filters.vhd
+rtl/vhdl/tracking/gps_l1_ca_track_lock_state.vhd
 rtl/vhdl/gps_l1_ca_track_chan.vhd
 rtl/vhdl/gps_l1_ca_nav.vhd
 rtl/vhdl/gps_l1_ca_report.vhd
@@ -46,3 +51,7 @@ tb/vhdl/gps_l1_ca_acq_fft_code_gen_tb.vhd
 tb/vhdl/gps_l1_ca_acq_fft_mix_fft_tb.vhd
 tb/vhdl/gps_l1_ca_acq_fft_corr_tb.vhd
 tb/vhdl/gps_l1_ca_acq_fft_tb.vhd
+tb/vhdl/tracking/gps_l1_ca_track_discriminators_tb.vhd
+tb/vhdl/tracking/gps_l1_ca_track_power_lock_tb.vhd
+tb/vhdl/tracking/gps_l1_ca_track_loop_filters_tb.vhd
+tb/vhdl/tracking/gps_l1_ca_track_lock_state_tb.vhd
