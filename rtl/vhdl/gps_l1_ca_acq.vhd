@@ -21,7 +21,7 @@ entity gps_l1_ca_acq is
     coh_ms_i             : in  unsigned(7 downto 0);
     noncoh_dwells_i      : in  unsigned(7 downto 0);
     doppler_bin_count_i  : in  unsigned(7 downto 0);
-    code_bin_count_i     : in  unsigned(7 downto 0);
+    code_bin_count_i     : in  unsigned(10 downto 0);
     code_bin_step_i      : in  unsigned(10 downto 0);
     s_valid              : in  std_logic;
     s_i                  : in  signed(15 downto 0);

@@ -23,7 +23,7 @@ entity gps_l1_ca_acq_td is
     coh_ms_i             : in  unsigned(7 downto 0);
     noncoh_dwells_i      : in  unsigned(7 downto 0);
     doppler_bin_count_i  : in  unsigned(7 downto 0);
-    code_bin_count_i     : in  unsigned(7 downto 0);
+    code_bin_count_i     : in  unsigned(10 downto 0);
     code_bin_step_i      : in  unsigned(10 downto 0);
     s_valid              : in  std_logic;
     s_i                  : in  signed(15 downto 0);
@@ -56,11 +56,9 @@ architecture rtl of gps_l1_ca_acq_td is
   constant C_DEF_CODE_BINS    : integer := 16;
   constant C_DEF_CODE_STEP    : integer := 64;
   constant C_DEF_DOPP_BINS    : integer := 9;
-  constant C_MAX_CODE_BINS    : integer := 64;
-  constant C_MAX_DOPP_BINS    : integer := 33;
+  constant C_MAX_CODE_BINS    : integer := 1023;
+  constant C_MAX_DOPP_BINS    : integer := 81;
   constant C_MAX_BINS         : integer := C_MAX_CODE_BINS * C_MAX_DOPP_BINS;
-  -- Simulation debug knob: print TD acquisition search attempts.
-  constant C_LOG_TD_ACQ_ATTEMPTS : boolean := true;
 
   type sample_arr_t is array (0 to C_SAMPLES_PER_MS - 1) of signed(15 downto 0);
   type metric_arr_t is array (0 to C_MAX_BINS - 1) of unsigned(31 downto 0);
@@ -671,23 +669,6 @@ begin
             else
               acq_success_r  <= '0';
             end if;
-            -- pragma translate_off
-            if C_LOG_TD_ACQ_ATTEMPTS then
-              if best_metric_r >= detect_thresh then
-                log_msg("ACQ_TD", "success: best_prn=" & integer'image(to_integer(best_prn_r)) &
-                                 ", best_metric=" & u32_img(best_metric_r) &
-                                 ", best_code=" & integer'image(to_integer(best_code_r)) &
-                                 ", best_dopp=" & integer'image(to_integer(best_dopp_r)) &
-                                 ", detect_thresh=" & u32_img(detect_thresh));
-              else
-                log_msg("ACQ_TD", "failure: best_prn=" & integer'image(to_integer(best_prn_r)) &
-                                 ", best_metric=" & u32_img(best_metric_r) &
-                                 ", best_code=" & integer'image(to_integer(best_code_r)) &
-                                 ", best_dopp=" & integer'image(to_integer(best_dopp_r)) &
-                                 ", detect_thresh=" & u32_img(detect_thresh));
-              end if;
-            end if;
-            -- pragma translate_on
             state_r <= IDLE;
         end case;
       end if;

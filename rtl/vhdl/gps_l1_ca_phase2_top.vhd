@@ -78,7 +78,7 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal acq_coh_ms       : unsigned(7 downto 0);
   signal acq_noncoh_dwells: unsigned(7 downto 0);
   signal acq_dopp_bins    : unsigned(7 downto 0);
-  signal acq_code_bins    : unsigned(7 downto 0);
+  signal acq_code_bins    : unsigned(10 downto 0);
   signal acq_code_step    : unsigned(10 downto 0);
 
   signal acq_start_pulse  : std_logic;

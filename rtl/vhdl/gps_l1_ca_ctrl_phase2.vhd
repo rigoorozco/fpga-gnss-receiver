@@ -73,7 +73,7 @@ entity gps_l1_ca_ctrl_phase2 is
     acq_coh_ms_o       : out unsigned(7 downto 0);
     acq_noncoh_dwells_o: out unsigned(7 downto 0);
     acq_dopp_bins_o    : out unsigned(7 downto 0);
-    acq_code_bins_o    : out unsigned(7 downto 0);
+    acq_code_bins_o    : out unsigned(10 downto 0);
     acq_code_step_o    : out unsigned(10 downto 0)
   );
 end entity;
@@ -97,9 +97,9 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
 
   signal prn_start_r       : unsigned(5 downto 0) := to_unsigned(1, 6);
   signal prn_stop_r        : unsigned(5 downto 0) := to_unsigned(16, 6);
-  signal doppler_min_r     : signed(15 downto 0) := to_signed(-5000, 16);
-  signal doppler_max_r     : signed(15 downto 0) := to_signed(5000, 16);
-  signal doppler_step_r    : signed(15 downto 0) := to_signed(500, 16);
+  signal doppler_min_r     : signed(15 downto 0) := to_signed(-10000, 16);
+  signal doppler_max_r     : signed(15 downto 0) := to_signed(10000, 16);
+  signal doppler_step_r    : signed(15 downto 0) := to_signed(250, 16);
   signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(5000, 32);
   signal min_cn0_dbhz_r    : unsigned(7 downto 0) := to_unsigned(22, 8);
   signal carrier_lock_th_r : signed(15 downto 0) := to_signed(16384, 16); -- 0.50 in Q15
@@ -113,9 +113,9 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
   signal fll_bw_hz_r       : unsigned(15 downto 0) := to_unsigned(2560, 16);  -- 10.0 Hz Q8.8
   signal acq_coh_ms_r      : unsigned(7 downto 0) := to_unsigned(1, 8);
   signal acq_noncoh_dwells_r : unsigned(7 downto 0) := to_unsigned(2, 8);
-  signal acq_dopp_bins_r   : unsigned(7 downto 0) := to_unsigned(9, 8);
-  signal acq_code_bins_r   : unsigned(7 downto 0) := to_unsigned(8, 8);
-  signal acq_code_step_r   : unsigned(10 downto 0) := to_unsigned(64, 11);
+  signal acq_dopp_bins_r   : unsigned(7 downto 0) := to_unsigned(81, 8);
+  signal acq_code_bins_r   : unsigned(10 downto 0) := to_unsigned(1023, 11);
+  signal acq_code_step_r   : unsigned(10 downto 0) := to_unsigned(1, 11);
 begin
   ctrl_wack <= ctrl_wack_r;
   ctrl_rack <= ctrl_rack_r;
@@ -219,7 +219,7 @@ begin
               acq_noncoh_dwells_r <= unsigned(ctrl_wdata(7 downto 0));
             when 16#3C# =>
               acq_dopp_bins_r <= unsigned(ctrl_wdata(7 downto 0));
-              acq_code_bins_r <= unsigned(ctrl_wdata(15 downto 8));
+              acq_code_bins_r <= unsigned(ctrl_wdata(18 downto 8));
               acq_code_step_r <= unsigned(ctrl_wdata(26 downto 16));
             when others =>
               null;
@@ -285,7 +285,7 @@ begin
         rd(7 downto 0) := std_logic_vector(acq_noncoh_dwells_r);
       when 16#3C# =>
         rd(7 downto 0) := std_logic_vector(acq_dopp_bins_r);
-        rd(15 downto 8) := std_logic_vector(acq_code_bins_r);
+        rd(18 downto 8) := std_logic_vector(acq_code_bins_r);
         rd(26 downto 16) := std_logic_vector(acq_code_step_r);
       when 16#40# =>
         rd(0) := acq_done_i;

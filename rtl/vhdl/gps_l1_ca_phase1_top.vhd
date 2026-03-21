@@ -89,9 +89,9 @@ architecture rtl of gps_l1_ca_phase1_top is
   signal dopp_step_lock   : unsigned(15 downto 0);
   signal acq_coh_ms       : unsigned(7 downto 0) := to_unsigned(1, 8);
   signal acq_noncoh_dwells: unsigned(7 downto 0) := to_unsigned(2, 8);
-  signal acq_dopp_bins    : unsigned(7 downto 0) := to_unsigned(9, 8);
-  signal acq_code_bins    : unsigned(7 downto 0) := to_unsigned(8, 8);
-  signal acq_code_step    : unsigned(10 downto 0) := to_unsigned(64, 11);
+  signal acq_dopp_bins    : unsigned(7 downto 0) := to_unsigned(81, 8);
+  signal acq_code_bins    : unsigned(10 downto 0) := to_unsigned(1023, 11);
+  signal acq_code_step    : unsigned(10 downto 0) := to_unsigned(1, 11);
 
   signal nav_valid      : std_logic;
   signal nav_bit        : std_logic;
